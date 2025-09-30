@@ -5,10 +5,12 @@ import { getBoundedParkData, updateParkData } from "../../backend/mapData/mapDat
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import getParkColorByArea from "../../utils/parkColor";
 import "leaflet.heat";
+import metersToPixels from "../../utils/metersToPixel";
 
 export default function Map() {
     const mapRef = useRef<L.Map | null>(null);
     const parksLayerRef = useRef<L.GeoJSON | null>(null);
+    const heatLayerRef = useRef<L.Layer | null>(null);
 
     useEffect(() => {
         if (mapRef.current) return;
@@ -100,25 +102,35 @@ export default function Map() {
                 },
             }).addTo(mapRef.current);
 
-            const heatPoints: [number, number, number][] = parks.map((park) => {
-                return [park.center[0], park.center[1], Math.sqrt(park.area) / 100];
-            });
+            const heatPoints: [number, number, number][] = parks.flatMap((park) =>
+               [[park.center[0],park.center[1], park.area<100?0.1:Math.pow(park.area, 0.3)]]
+				// park.coordinates.map(
+                //     (coord) =>
+                //         [
+                //             coord[0],
+                //             coord[1],
+                //             Math.sqrt(park.area) / 10 / park.coordinates.length,
+                //         ] as [number, number, number]
+                // )
+            );
 
             if ((mapRef.current as any)._heatLayer) {
                 mapRef.current.removeLayer((mapRef.current as any)._heatLayer);
             }
-
+            console.log(
+                mapRef.current.getZoom(),
+                (10 / Math.pow(1.5, 14)) * Math.pow(1.5, mapRef.current.getZoom())
+            );
             const heat = (L as any)
                 .heatLayer(heatPoints, {
-                    radius: 50,
-                    blur: 50,
-                    maxZoom: 17,
+                    radius: 20 * Math.pow(1.5, mapRef.current.getZoom()-14),
+                    blur: 20 * Math.pow(1.2, mapRef.current.getZoom()-14),
                     gradient: {
-                        0.0: "red",
-                        0.2: "orange",
-                        0.4: "yellow",
-                        0.6: "lime",
-                        0.8: "green",
+                        0.1: "#461010ff",
+                        0.3: "#ff0000ff",
+                        0.5: "#ff8800ff",
+                        0.7: "#f6ff00ff",
+                        0.9: "#8cff00ff",
                     },
                 })
                 .addTo(mapRef.current);

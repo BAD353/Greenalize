@@ -2,6 +2,8 @@ import type { Park } from "../../types/park";
 import convertToParkList from "../../utils/convertToPark";
 import { fetchMapData } from "./fecthMapData";
 
+import { set, get } from "idb-keyval";
+
 const TILE_STEP = 0.5;
 const TILE_LOOKAHEAD = 0;
 const MOVEMENT_LOOKAHEAD = 0;
@@ -17,6 +19,7 @@ export function addParkData(data: any): void {
             processedParks.set(park.id, true);
         }
     });
+    console.log("Parks Loaded: ", parkData.length);
 }
 
 export function getParkData() {
@@ -27,15 +30,38 @@ export function getBoundedParkData(north: number, east: number, south: number, w
     return parkData.filter((park) => {
         if (!park.boundingBox) return false;
         const [pNorth, pEast, pSouth, pWest] = park.boundingBox;
-        return !(pSouth > north+MOVEMENT_LOOKAHEAD || pNorth < south-MOVEMENT_LOOKAHEAD || pWest > east+MOVEMENT_LOOKAHEAD || pEast < west-MOVEMENT_LOOKAHEAD);
+        return !(
+            pSouth > north + MOVEMENT_LOOKAHEAD ||
+            pNorth < south - MOVEMENT_LOOKAHEAD ||
+            pWest > east + MOVEMENT_LOOKAHEAD ||
+            pEast < west - MOVEMENT_LOOKAHEAD
+        );
     });
 }
 
 export async function updateTile(lat: number, lon: number, key: string) {
     console.log(`REQUESTING ${lat} ${lon}`);
+
     try {
-        addParkData(await fetchMapData(lat, lon, lat + TILE_STEP, lon + TILE_STEP));
+        // Try to load from IndexedDB
+        const cached = await get(`tile_${key}`);
+        if (cached) {
+            console.log(`Loaded ${key} from IndexedDB`);
+            addParkData(cached);
+            return;
+        }
+
+        // Otherwise fetch new data
+        const data = await fetchMapData(lat, lon, lat + TILE_STEP, lon + TILE_STEP);
+
+        // Save to IndexedDB (no 5MB limit)
+        await set(`tile_${key}`, data);
+
+        console.log(`Saved ${key} to IndexedDB`);
+        addParkData(data);
+
     } catch (e) {
+        console.error(`Failed to process tile ${key}:`, e);
         processedTiles.set(key, false);
     }
 }
