@@ -15,6 +15,9 @@ export async function fetchMapData(
       way["leisure"="garden"](${south},${west},${north},${east});
       relation["leisure"="playground"](${south},${west},${north},${east});
       way["leisure"="playground"](${south},${west},${north},${east});
+      relation["leisure"="nature_reserve"](${south},${west},${north},${east});
+      way["leisure"="nature_reserve"](${south},${west},${north},${east});
+      nwr["leisure"="nature_reserve"](${south},${west},${north},${east});
 
       // Natural green features
       relation["natural"="wood"](${south},${west},${north},${east});
@@ -40,9 +43,7 @@ export async function fetchMapData(
       relation["landuse"="vineyard"](${south},${west},${north},${east});
       way["landuse"="vineyard"](${south},${west},${north},${east});
     );
-    out body;
-    >;
-    out skel qt;
+    out geom;
   `;
 
   const response = await fetch('https://overpass-api.de/api/interpreter', {

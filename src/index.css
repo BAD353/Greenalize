@@ -5,8 +5,10 @@ body {
 
 :root {
   --black-text-color: #000000;
+  user-select:none;
 }
 
 p {
   font-family: 'Roboto', sans-serif;
+  user-select: text;
 }

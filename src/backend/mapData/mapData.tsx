@@ -2,7 +2,7 @@ import type { Park } from "../../types/park";
 import convertToParkList from "../../utils/convertToPark";
 import { fetchMapData } from "./fecthMapData";
 
-import { set, get } from "idb-keyval";
+import { set, get, clear } from "idb-keyval";
 
 const TILE_STEP = 0.5;
 const TILE_LOOKAHEAD = 0;
@@ -37,6 +37,18 @@ export function getBoundedParkData(north: number, east: number, south: number, w
             pEast < west - MOVEMENT_LOOKAHEAD
         );
     });
+}
+
+export async function forceReload() {
+    try {
+        await clear();
+        parkData = [];
+        processedParks.clear();
+        processedTiles.clear();
+        console.log("Cleared!");
+    } catch (err) {
+        console.error("Failed to clear IndexedDB:", err);
+    }
 }
 
 export async function updateTile(lat: number, lon: number, key: string) {

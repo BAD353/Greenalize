@@ -7,15 +7,24 @@ import getParkColorByArea from "../../utils/parkColor";
 import "leaflet.heat";
 import metersToPixels from "../../utils/metersToPixel";
 
-export default function Map() {
+let mapView: [[number, number], number] = [[41.38, 2.17], 14];
+
+export default function Map({
+    showHeatmap,
+    showParks,
+}: {
+    showHeatmap: boolean;
+    showParks: boolean;
+}) {
     const mapRef = useRef<L.Map | null>(null);
     const parksLayerRef = useRef<L.GeoJSON | null>(null);
     const heatLayerRef = useRef<L.Layer | null>(null);
+    let lastUpdate = performance.now();
 
     useEffect(() => {
         if (mapRef.current) return;
 
-        mapRef.current = L.map("map").setView([41.38, 2.17], 14);
+        mapRef.current = L.map("map").setView(mapView[0], mapView[1]);
         mapRef.current.setMinZoom(13);
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -23,10 +32,15 @@ export default function Map() {
             maxZoom: 19,
         }).addTo(mapRef.current);
 
-        loadParks();
+        loadParks(showParks, showHeatmap);
 
         mapRef.current.on("moveend", () => {
-            loadParks();
+            if (performance.now() - lastUpdate > 500) {
+                lastUpdate = performance.now();
+                loadParks(showParks, showHeatmap);
+            }
+            mapView = [[mapRef.current?.getCenter().lat!,mapRef.current?.getCenter().lng!], mapRef.current?.getZoom()!];
+            console.log(mapView);
         });
 
         return () => {
@@ -35,9 +49,9 @@ export default function Map() {
                 mapRef.current = null;
             }
         };
-    }, []);
+    }, [showParks, showHeatmap]);
 
-    async function loadParks() {
+    async function loadParks(showParks: boolean, showHeatmap: boolean) {
         if (!mapRef.current) return;
         const bounds = mapRef.current.getBounds();
         const south = bounds.getSouth();
@@ -46,7 +60,15 @@ export default function Map() {
         const east = bounds.getEast();
 
         try {
-            await updateParkData([north, east, south, west]);
+            const latDist = north - south;
+            const lonDist = east - west;
+            const factor = 0;
+            await updateParkData([
+                north + latDist * factor,
+                east + lonDist * factor,
+                south - latDist * factor,
+                west - lonDist * factor,
+            ]);
 
             // let startTime = performance.now();
 
@@ -81,30 +103,37 @@ export default function Map() {
 
             // let midTime = performance.now();
             // console.log(`process ${midTime - startTime}`);
+            if (showParks) {
+                parksLayerRef.current = L.geoJSON(geojson, {
+                    style: (feature) => ({
+                        color: "green",
+                        fillColor: getParkColorByArea(feature?.properties?.area),
+                        weight: 1,
+                        fillOpacity: 0.5,
+                    }),
+                    onEachFeature: (feature, layer) => {
+                        let name: string =
+                            feature.properties?.name.length > 3
+                                ? `<strong>Name:</strong> ${feature.properties?.name}<br>`
+                                : "";
+                        let area: string = `<strong>Area:</strong> ${Math.round(
+                            feature.properties?.area
+                        )} m²<br>`;
+                        let color: string = getParkColorByArea(feature.properties?.area);
+                        layer.bindPopup(name + area);
+                    },
+                }).addTo(mapRef.current);
+            }
 
-            parksLayerRef.current = L.geoJSON(geojson, {
-                style: (feature) => ({
-                    color: "green",
-                    fillColor: getParkColorByArea(feature?.properties?.area),
-                    weight: 1,
-                    fillOpacity: 0.5,
-                }),
-                onEachFeature: (feature, layer) => {
-                    let name: string =
-                        feature.properties?.name.length > 3
-                            ? `<strong>Name:</strong> ${feature.properties?.name}<br>`
-                            : "";
-                    let area: string = `<strong>Area:</strong> ${Math.round(
-                        feature.properties?.area
-                    )} m²<br>`;
-                    let color: string = getParkColorByArea(feature.properties?.area);
-                    layer.bindPopup(name + area + color);
-                },
-            }).addTo(mapRef.current);
-
-            const heatPoints: [number, number, number][] = parks.flatMap((park) =>
-               [[park.center[0],park.center[1], park.area<100?0.1:Math.pow(park.area, 0.3)]]
-				// park.coordinates.map(
+            const heatPoints: [number, number, number][] = parks.flatMap(
+                (park) => [
+                    [
+                        park.center[0],
+                        park.center[1],
+                        park.area < 100 ? 0.1 : Math.pow(park.area, 0.3),
+                    ],
+                ]
+                // park.coordinates.map(
                 //     (coord) =>
                 //         [
                 //             coord[0],
@@ -121,22 +150,23 @@ export default function Map() {
                 mapRef.current.getZoom(),
                 (10 / Math.pow(1.5, 14)) * Math.pow(1.5, mapRef.current.getZoom())
             );
-            const heat = (L as any)
-                .heatLayer(heatPoints, {
-                    radius: 20 * Math.pow(1.5, mapRef.current.getZoom()-14),
-                    blur: 20 * Math.pow(1.2, mapRef.current.getZoom()-14),
-                    gradient: {
-                        0.1: "#461010ff",
-                        0.3: "#ff0000ff",
-                        0.5: "#ff8800ff",
-                        0.7: "#f6ff00ff",
-                        0.9: "#8cff00ff",
-                    },
-                })
-                .addTo(mapRef.current);
+            if (showHeatmap) {
+                const heat = (L as any)
+                    .heatLayer(heatPoints, {
+                        radius: 20 * Math.pow(1.5, mapRef.current.getZoom() - 14),
+                        blur: 20 * Math.pow(1.2, mapRef.current.getZoom() - 14),
+                        gradient: {
+                            0.1: "#461010ff",
+                            0.3: "#ff0000ff",
+                            0.5: "#ff8800ff",
+                            0.7: "#f6ff00ff",
+                            0.9: "#8cff00ff",
+                        },
+                    })
+                    .addTo(mapRef.current);
 
-            (mapRef.current as any)._heatLayer = heat;
-
+                (mapRef.current as any)._heatLayer = heat;
+            }
             // let endTime = performance.now();
             // console.log(`draw ${endTime - midTime}`);
         } catch (error) {
@@ -144,5 +174,10 @@ export default function Map() {
         }
     }
 
-    return <div id="map" style={{ height: "100vh", width: "100vw", margin: 0, padding: 0 }} />;
+    return (
+        <div
+            id="map"
+            style={{ height: "100vh", width: "100vw", margin: 0, padding: 0, zIndex: "0" }}
+        />
+    );
 }
