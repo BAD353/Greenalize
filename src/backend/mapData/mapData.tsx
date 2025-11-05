@@ -2,25 +2,26 @@ import toast from "react-hot-toast";
 import type { Park } from "../../types/park";
 import convertToParkList from "../../utils/convertToPark";
 import { fetchMapData } from "./fecthMapData";
-
 import { set, get, clear } from "idb-keyval";
 
 const TILE_STEP = 0.5;
 const TILE_LOOKAHEAD = 0;
 const MOVEMENT_LOOKAHEAD = 0;
+
 let parkData: Park[] = [];
 let processedTiles: Map<string, boolean> = new Map();
 let processedParks: Map<number, boolean> = new Map();
 
-export function addParkData(data: any): void {
-    let newParks = convertToParkList(data);
-    newParks.forEach((park) => {
-        if (!processedParks.get(park.id)) {
-            parkData.push(park);
-            processedParks.set(park.id, true);
-        }
-    });
-    console.log("Parks Loaded: ", parkData.length);
+async function saveMergedParksToDB() {
+    await set("merged_parks", parkData);
+}
+
+export async function loadMergedParks() {
+    const cached = await get("merged_parks");
+    if (cached) {
+        parkData = cached;
+        console.log("Loaded merged parks from IndexedDB:", parkData.length);
+    }
 }
 
 export function getParkData() {
@@ -28,7 +29,7 @@ export function getParkData() {
 }
 
 export function getBoundedParkData(north: number, east: number, south: number, west: number) {
-    return parkData.filter((park, index) => {
+    return parkData.filter((park) => {
         if (!park.boundingBox) return false;
         const [pNorth, pEast, pSouth, pWest] = park.boundingBox;
         return !(
@@ -52,11 +53,40 @@ export async function forceReload() {
     }
 }
 
+async function mergeParksInWorker(newParks: Park[], toastId: any) {
+    return new Promise<Park[]>((resolve) => {
+        const worker = new Worker(new URL("./mergeWorker.ts", import.meta.url), { type: "module" });
+        worker.postMessage([...parkData, ...newParks]);
+        worker.onmessage = (event) => {
+            if (event.data.type === "progress") {
+                console.log(event.data.text);
+                return;
+            }
+
+            if (event.data.type === "result") {
+                console.log("Merging complete:", event.data.data);
+                toast.success("Parks merged!!!", { id: toastId });
+                resolve(event.data.data);
+                worker.terminate();
+            }
+        };
+    });
+}
+
+export async function addParkData(data: any) {
+    const newParks = convertToParkList(data);
+    const toastId = toast.loading("Merging parks...");
+
+    parkData = await mergeParksInWorker(newParks, toastId);
+    console.log("DONE");
+    await saveMergedParksToDB();
+    toast.success("Parks merged & saved!", { id: toastId });
+    console.log("Merged parks count:", parkData.length);
+}
+
 export async function updateTile(lat: number, lon: number, key: string) {
     console.log(`REQUESTING ${lat} ${lon}`);
-
     try {
-        // Try to load from IndexedDB
         const cached = await get(`tile_${key}`);
         if (cached) {
             console.log(`Loaded ${key} from IndexedDB`);
@@ -64,12 +94,8 @@ export async function updateTile(lat: number, lon: number, key: string) {
             return;
         }
 
-        // Otherwise fetch new data
         const data = await fetchMapData(lat, lon, lat + TILE_STEP, lon + TILE_STEP);
-        console.log(data);
-        // Save to IndexedDB (no 5MB limit)
         await set(`tile_${key}`, data);
-
         console.log(`Saved ${key} to IndexedDB`);
         addParkData(data);
     } catch (e) {
@@ -78,93 +104,16 @@ export async function updateTile(lat: number, lon: number, key: string) {
     }
 }
 
-// Fast bounding box containment check
-function bboxContains(a: [number, number, number, number], b: [number, number, number, number]): boolean {
-    const [northA, eastA, southA, westA] = a;
-    const [northB, eastB, southB, westB] = b;
-    return northA >= northB && eastA >= eastB && southA <= southB && westA <= westB;
-}
-
-// Fast bbox overlap check (to skip unrelated polygons)
-function bboxOverlaps(a: [number, number, number, number], b: [number, number, number, number]): boolean {
-    const [northA, eastA, southA, westA] = a;
-    const [northB, eastB, southB, westB] = b;
-    return !(eastA < westB || westA > eastB || northA < southB || southA > northB);
-}
-
-// Point-in-polygon test (ray-casting)
-function isPointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
-    const [x, y] = point;
-    let inside = false;
-
-    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        const [xi, yi] = polygon[i];
-        const [xj, yj] = polygon[j];
-
-        const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-        if (intersect) inside = !inside;
-    }
-
-    return inside;
-}
-
-export function mergeGivenParks(a: Park, b: Park): Park | undefined {
-    const bboxA = a.boundingBox;
-    const bboxB = b.boundingBox;
-
-    // ✅ Step 1: quick reject — no overlap means no containment
-    if (!bboxOverlaps(bboxA, bboxB)) return undefined;
-
-    // ✅ Step 2: check if A's bbox fully contains B's bbox or vice versa
-    const aContainsB = bboxContains(bboxA, bboxB);
-    const bContainsA = bboxContains(bboxB, bboxA);
-
-    // ✅ Step 3: only then do expensive polygon containment checks
-    if (aContainsB) {
-        const bInsideA = b.coordinates.every(coord => isPointInPolygon(coord, a.coordinates));
-        if (bInsideA) return a;
-    }
-
-    if (bContainsA) {
-        const aInsideB = a.coordinates.every(coord => isPointInPolygon(coord, b.coordinates));
-        if (aInsideB) return b;
-    }
-
-    return undefined;
-}
-
-export function mergeAllParks() {
-    const mergedParks: Park[] = [];
-
-    for (let i = 0; i < parkData.length; i++) {
-        const parkA = parkData[i];
-        let merged = false;
-
-        for (let j = 0; j < mergedParks.length; j++) {
-            const parkB = mergedParks[j];
-            const mergedPark = mergeGivenParks(parkA, parkB);
-
-            if (mergedPark) {
-                mergedParks[j] = mergedPark;
-                merged = true;
-                break;
-            }
-        }
-
-        if (!merged) mergedParks.push(parkA);
-    }
-
-    parkData = mergedParks;
-}
-
 export async function updateParkData(bbox: [number, number, number, number]) {
-    let id_bbox: [number, number, number, number] = [
+    const id_bbox: [number, number, number, number] = [
         Math.ceil(bbox[0] / TILE_STEP) + TILE_LOOKAHEAD,
         Math.ceil(bbox[1] / TILE_STEP) + TILE_LOOKAHEAD,
         Math.floor(bbox[2] / TILE_STEP) - TILE_LOOKAHEAD,
         Math.floor(bbox[3] / TILE_STEP) - TILE_LOOKAHEAD,
     ];
+
     const tasks: Promise<void>[] = [];
+
     for (let latID = id_bbox[2]; latID <= id_bbox[0]; latID++) {
         for (let lonID = id_bbox[3]; lonID <= id_bbox[1]; lonID++) {
             const key = `${latID},${lonID}`;
@@ -174,14 +123,10 @@ export async function updateParkData(bbox: [number, number, number, number]) {
             }
         }
     }
+
     if (tasks.length > 0) {
         const toastId = toast.loading("Loading parks...");
-
         await Promise.all(tasks);
-        mergeAllParks();
-
-        toast.success("Parks loaded!", {
-            id: toastId,
-        });
+        toast.success("Parks loaded!", { id: toastId });
     }
 }

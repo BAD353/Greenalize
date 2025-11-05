@@ -4,6 +4,10 @@ export async function fetchMapData(
   north: number,
   east: number
 ) {
+  // south = 41.388219-0.05;
+  // north = 41.388219+0.05;
+  // east = 2.188125+0.05;
+  // west = 2.188125-0.05;
   const query = `
     [out:json][timeout:25];
     (
@@ -30,8 +34,8 @@ export async function fetchMapData(
       // Landuse greenery
       relation["landuse"="forest"](${south},${west},${north},${east});
       way["landuse"="forest"](${south},${west},${north},${east});
-      relation["landuse"="grass"](${south},${west},${north},${east});
-      way["landuse"="grass"](${south},${west},${north},${east});
+      relation["landuse"="allotments"](${south},${west},${north},${east});
+      way["landuse"="allotments"](${south},${west},${north},${east});
       relation["landuse"="recreation_ground"](${south},${west},${north},${east});
       way["landuse"="recreation_ground"](${south},${west},${north},${east});
       relation["landuse"="meadow"](${south},${west},${north},${east});

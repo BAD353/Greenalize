@@ -79,7 +79,7 @@ export default function Map({
                     features: parks.map((park) => {
                         const feature: Feature<
                             Polygon,
-                            { id: number; name: string; area: number }
+                            { id: number; name: string; area: number; bbox: any }
                         > = {
                             type: "Feature",
                             geometry: {
@@ -90,6 +90,7 @@ export default function Map({
                                 id: park.id,
                                 name: park.name ?? "",
                                 area: park.area ?? -1,
+                                bbox: park.boundingBox,
                             },
                         };
                         return feature;
@@ -111,6 +112,7 @@ export default function Map({
                         fillOpacity: 0.5,
                     }),
                     onEachFeature: (feature, layer) => {
+                        let id:string = `<strong>ID:</strong> ${feature.properties?.id}<br>`;
                         let name: string =
                             feature.properties?.name.length > 3
                                 ? `<strong>Name:</strong> ${feature.properties?.name}<br>`
@@ -119,7 +121,7 @@ export default function Map({
                             feature.properties?.area
                         )} m²<br>`;
                         let color: string = getParkColorByArea(feature.properties?.area);
-                        layer.bindPopup(name + area);
+                        layer.bindPopup(id+name + area);
                     },
                 }).addTo(mapRef.current);
             }
