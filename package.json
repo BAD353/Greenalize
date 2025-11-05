@@ -21,6 +21,7 @@
     "path": "^0.12.7",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "react-hot-toast": "^2.6.0",
     "simpleheat": "^0.4.0",
     "webgl-heatmap": "^0.2.3"
   },

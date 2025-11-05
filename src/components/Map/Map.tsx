@@ -40,7 +40,6 @@ export default function Map({
                 loadParks(showParks, showHeatmap);
             }
             mapView = [[mapRef.current?.getCenter().lat!,mapRef.current?.getCenter().lng!], mapRef.current?.getZoom()!];
-            console.log(mapView);
         });
 
         return () => {
@@ -167,7 +166,7 @@ export default function Map({
 
                 (mapRef.current as any)._heatLayer = heat;
             }
-            // let endTime = performance.now();
+            let endTime = performance.now();
             // console.log(`draw ${endTime - midTime}`);
         } catch (error) {
             console.error("Error drawing parks:", error);

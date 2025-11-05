@@ -1,5 +1,6 @@
 import React, { Suspense, useState } from "react";
 import { forceReload } from "../../backend/mapData/mapData";
+import toast, { Toaster } from "react-hot-toast";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -39,6 +40,7 @@ export default function HomePage() {
     const [isParkLayerEnabled, toggleParkLayer] = useState(true);
     return (
         <div style={styles.page}>
+            <Toaster position="top-center" reverseOrder={false} />
             <Suspense fallback={<div>Loading map...</div>}>
                 <Map showHeatmap={isHeatmapEnabled} showParks={isParkLayerEnabled} />
             </Suspense>
@@ -84,6 +86,7 @@ const styles: Record<string, React.CSSProperties> = {
         width: "100vw",
         margin: 0,
         position: "relative",
+        fontFamily: "Roboto, sans-serif",
     },
     buttons: {
         position: "absolute",

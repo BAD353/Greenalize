@@ -10,15 +10,13 @@ export default function convertToParkList(elements: OsmElement[]): Park[] {
             nodeMap.set(element.id, [element.lat, element.lon]);
         }
     });
-
     let parks: Park[] = [];
     elements.forEach((element) => {
-        if (element.type == "way") {
-            let coordinates: [number, number][] = [];
+        if (element.type == "way" || element.type == "relation") {
+            let coordinates: [number, number][] = []; // lat, lon
             let bbox: [number, number, number, number] = [-1, -1, -1, -1]; //north, east, south, west
-            element.nodes?.forEach((node) => {
-                let coords = nodeMap.get(node);
-                if (!coords) return;
+            element.geometry?.forEach((node) => {
+                let coords:[number,number] = [node.lat, node.lon];
                 coordinates.push(coords);
                 if (bbox[0] == -1) bbox = [...coords, ...coords];
                 bbox = [
