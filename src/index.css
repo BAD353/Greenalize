@@ -5,8 +5,9 @@ body {
 }
 
 :root {
-  --black-text-color: #000000;
   user-select:none;
+  --black-text-color: #000000;
+  --background: #ffffff;
 }
 
 p {

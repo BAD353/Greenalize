@@ -24,7 +24,12 @@ export default function Map({
     useEffect(() => {
         if (mapRef.current) return;
 
-        mapRef.current = L.map("map").setView(mapView[0], mapView[1]);
+        const params = new URLSearchParams(window.location.search);
+        const lat = parseFloat(params.get("lat") || "41.38");
+        const lng = parseFloat(params.get("lng") || "2.17");
+        const zoom = parseInt(params.get("zoom") || "14", 10);
+
+        mapRef.current = L.map("map").setView([lat, lng], zoom);
         mapRef.current.setMinZoom(13);
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -34,13 +39,29 @@ export default function Map({
 
         loadParks(showParks, showHeatmap);
 
+        function updateURL() {
+            if (!mapRef.current) return;
+            const center = mapRef.current.getCenter();
+            const zoom = mapRef.current.getZoom();
+            const newParams = new URLSearchParams(window.location.search);
+
+            newParams.set("lat", center.lat.toFixed(5));
+            newParams.set("lng", center.lng.toFixed(5));
+            newParams.set("zoom", zoom.toString());
+
+            const newUrl = `${window.location.pathname}?${newParams.toString()}`;
+            window.history.replaceState({}, "", newUrl);
+        }
+
         mapRef.current.on("moveend", () => {
             if (performance.now() - lastUpdate > 500) {
                 lastUpdate = performance.now();
                 loadParks(showParks, showHeatmap);
             }
-            mapView = [[mapRef.current?.getCenter().lat!,mapRef.current?.getCenter().lng!], mapRef.current?.getZoom()!];
+            updateURL();
         });
+
+        mapRef.current.on("zoomend", updateURL);
 
         return () => {
             if (mapRef.current) {
@@ -112,7 +133,7 @@ export default function Map({
                         fillOpacity: 0.5,
                     }),
                     onEachFeature: (feature, layer) => {
-                        let id:string = `<strong>ID:</strong> ${feature.properties?.id}<br>`;
+                        let id: string = `<strong>ID:</strong> ${feature.properties?.id}<br>`;
                         let name: string =
                             feature.properties?.name.length > 3
                                 ? `<strong>Name:</strong> ${feature.properties?.name}<br>`
@@ -121,7 +142,7 @@ export default function Map({
                             feature.properties?.area
                         )} m²<br>`;
                         let color: string = getParkColorByArea(feature.properties?.area);
-                        layer.bindPopup(id+name + area);
+                        layer.bindPopup(id + name + area);
                     },
                 }).addTo(mapRef.current);
             }

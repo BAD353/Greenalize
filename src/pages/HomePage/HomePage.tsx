@@ -40,7 +40,6 @@ export default function HomePage() {
     const [isParkLayerEnabled, toggleParkLayer] = useState(true);
     return (
         <div style={styles.page}>
-            <Toaster position="top-center" reverseOrder={false} />
             <Suspense fallback={<div>Loading map...</div>}>
                 <Map showHeatmap={isHeatmapEnabled} showParks={isParkLayerEnabled} />
             </Suspense>
