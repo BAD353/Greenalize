@@ -241,7 +241,7 @@ export default function LandingPage() {
                     onMouseEnter={() => setHovered(coords ? true : false)}
                     onMouseLeave={() => setHovered(false)}
                     onClick={() => {
-                        navigate(`/map?lat=${coords?.lat}&lng=${coords?.lng}&zoom=15`);
+                        if(coords)navigate(`/map?lat=${coords?.lat}&lng=${coords?.lng}&zoom=15`);
                     }}
                 >
                     <span
