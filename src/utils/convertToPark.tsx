@@ -15,7 +15,8 @@ export default function convertToParkList(elements: OsmElement[]): Park[] {
         if (element.type == "way" || element.type == "relation") {
             let coordinates: [number, number][] = []; // lat, lon
             let bbox: [number, number, number, number] = [-1, -1, -1, -1]; //north, east, south, west
-            element.geometry?.forEach((node) => {
+           // @ts-ignore 
+           element.geometry?.forEach((node) => {
                 let coords:[number,number] = [node.lat, node.lon];
                 coordinates.push(coords);
                 if (bbox[0] == -1) bbox = [...coords, ...coords];

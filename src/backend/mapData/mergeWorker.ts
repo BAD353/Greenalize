@@ -38,6 +38,7 @@ function mergeGivenParks(a: Park, b: Park): Park | undefined {
     }
 
     try {
+        // @ts-ignore
         const mergedPoly = union(polyA, polyB);
         if (mergedPoly) {
             const mergedCoords = mergedPoly.geometry.coordinates[0] as [number, number][];
@@ -54,6 +55,7 @@ function mergeGivenParks(a: Park, b: Park): Park | undefined {
                 id: a.id,
                 name: a.name,
                 coordinates: mergedCoords,
+                // @ts-ignore
                 boundingBox: mergedBBox,
             };
         }
