@@ -1,69 +1,60 @@
-# React + TypeScript + Vite
+# Greenalize
+## Description
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Greenalize is a web application for exploring parks and green spaces on an interactive map. It features a heatmap visualization to highlight areas with strong or weak access to green spaces. Built with React, TypeScript, Vite, and Leaflet, Greenalize is fast, modern, and scaleable.
 
-Currently, two official plugins are available:
+**Now available online at [https://greenalize.vercel.app/](https://greenalize.vercel.app/)**
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Features
 
-## Expanding the ESLint configuration
+- Interactive map for viewing parks  
+- Heatmap layer to visualize park distribution  
+- Optional park detail popups  
+- Fast development with Vite  
+- Type-safe codebase using TypeScript  
+- Responsive layout for mobile and desktop  
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Screenshots
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+<img src="public/markdown/city_selection.jpg" width="800" alt="City Selection"><br/>
+<img src="public/markdown/park-map.jpg" width="800" alt="Park Map">
 
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
+## Technology Stack
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+| Category | Technology |
+|---------|------------|
+| Frontend Framework | React |
+| Bundler | Vite |
+| Language | TypeScript |
+| Map Library | Leaflet / Mapbox GL JS / Google Maps API |
+| Styling | Tailwind / CSS Modules / Styled Components |
+
+## Instructions
+
+### Installation 
+
+```bash
+git clone https://github.com/American-School-of-Barcelona/Greenalize.git
+
+cd Greenalize
+
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Development 
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+To start the server, run
+```bash
+npm run dev
+```
 
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Open in the browser
+```
+http://localhost:5173
+```
+
+### Production 
+
+```bash
+npm run build
 ```
