@@ -165,11 +165,21 @@ export default function LandingPage() {
                                 <li
                                     key={index}
                                     style={styles.dropdownItem}
+                                    tabIndex={0}
                                     onClick={() => {
                                         setQuery(c.city + ", " + c.country);
                                         setShowDropdown(false);
                                         setCoords({ lat: c.lat, lng: c.lng });
                                         setZoom(10);
+                                    }}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault(); // avoid page scroll on Space
+                                            setQuery(`${c.city}, ${c.country}`);
+                                            setShowDropdown(false);
+                                            setCoords({ lat: c.lat, lng: c.lng });
+                                            setZoom(10);
+                                        }
                                     }}
                                 >
                                     <b>{c.city}</b>
@@ -241,7 +251,7 @@ export default function LandingPage() {
                     onMouseEnter={() => setHovered(coords ? true : false)}
                     onMouseLeave={() => setHovered(false)}
                     onClick={() => {
-                        if(coords)navigate(`/map?lat=${coords?.lat}&lng=${coords?.lng}&zoom=15`);
+                        if (coords) navigate(`/map?lat=${coords?.lat}&lng=${coords?.lng}&zoom=15`);
                     }}
                 >
                     <span
