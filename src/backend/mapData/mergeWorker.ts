@@ -5,7 +5,7 @@ function parkToPolygon(park: Park) {
     try {
         return polygon([park.coordinates]);
     } catch (e) {
-        console.error(`Invalid polygon for park ${park.id}:`, e);
+        // console.error(`Invalid polygon for park ${park.id}:`, e);
         return null;
     }
 }
