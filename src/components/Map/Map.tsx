@@ -218,7 +218,7 @@ export default function Map({
 
                 // Send data to worker
                 workerRef.current.postMessage({
-                    parks: parks.map((p) => ({ coordinates: p.coordinates })),
+                    parks: parks.map((p) => ({ coordinates: p.coordinates, area:p.area })),
                     mapSize: { x: mapSize.x, y: mapSize.y },
                     latLngGrid,
                 });

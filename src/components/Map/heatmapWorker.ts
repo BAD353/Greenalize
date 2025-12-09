@@ -57,120 +57,123 @@ function isPointInPolygon(
     return inside;
 }
 
-function bilinearInterpolate(
-    x: number,
-    y: number,
-    x1: number,
-    x2: number,
-    y1: number,
-    y2: number,
-    q11: number,
-    q12: number,
-    q21: number,
-    q22: number
-): number {
-    const r1 = ((x2 - x) / (x2 - x1)) * q11 + ((x - x1) / (x2 - x1)) * q21;
-    const r2 = ((x2 - x) / (x2 - x1)) * q12 + ((x - x1) / (x2 - x1)) * q22;
-    return ((y2 - y) / (y2 - y1)) * r1 + ((y - y1) / (y2 - y1)) * r2;
-}
 
-self.onmessage = function(e: MessageEvent) {
-    const { parks, mapSize, latLngGrid } = e.data;
-    
-    const pixelStep = 20;
+self.onmessage = function (e: MessageEvent) {
+    const { parks, mapSize, latLngGrid, pixelStep = 20 } = e.data;
+
     const gridWidth = Math.ceil(mapSize.x / pixelStep);
     const gridHeight = Math.ceil(mapSize.y / pixelStep);
-    const maxDistanceDegrees = 0.002;
-    
-    // Calculate distances at grid points
-    const distanceGrid: number[][] = [];
-    
+
+    const epsilon = 1e-9;
+
+    // Flattened score grid
+    const scoreGrid = new Float32Array((gridWidth + 1) * (gridHeight + 1));
+
+    const getGrid = (gx: number, gy: number) =>
+        scoreGrid[gy * (gridWidth + 1) + gx];
+
+    // Compute scores at grid points
+    let globalMaxScore = 0;
+    const minDist = 0.002; 
+    const distanceScalePow = 1.5; 
+    const areaScalePow = 1.5; 
+    const minArea = 50; 
+    const maxArea = 10000; 
+
     for (let gy = 0; gy <= gridHeight; gy++) {
-        distanceGrid[gy] = [];
         for (let gx = 0; gx <= gridWidth; gx++) {
             const latLng = latLngGrid[gy][gx];
-            
-            let minDistance = Infinity;
-            let isInside = false;
-            
+
+            let sumWeightedDist = 0;
+
             for (const park of parks) {
-                if (isPointInPolygon(latLng.lat, latLng.lng, park.coordinates)) {
-                    isInside = true;
-                    minDistance = 0;
-                    break;
+                if (park.area < minArea || park.area == undefined) continue;
+                const inside = isPointInPolygon(latLng.lat, latLng.lng, park.coordinates);
+                if (inside) {
+                    sumWeightedDist += ( Math.pow(Math.min(park.area, maxArea),areaScalePow))/(Math.pow(minDist,distanceScalePow));  // If inside, set to area or 1
+                    continue;
                 }
-                
+
                 const dist = pointToPolygonDistance(latLng.lat, latLng.lng, park.coordinates);
-                minDistance = Math.min(minDistance, dist);
+                sumWeightedDist += ( Math.pow(Math.min(park.area, maxArea),areaScalePow))/Math.pow(Math.max(dist, minDist),distanceScalePow);
             }
-            
-            distanceGrid[gy][gx] = isInside ? 0 : minDistance;
+
+            const score = (sumWeightedDist + epsilon);
+            scoreGrid[gy * (gridWidth + 1) + gx] = score;
+
+            if (score*0.8 > globalMaxScore) globalMaxScore = score*0.8;
         }
     }
-    
-    // Create image data
+    console.error('Global max score:', globalMaxScore);
+    // Prepare pixel buffer
     const imageDataArray = new Uint8ClampedArray(mapSize.x * mapSize.y * 4);
-    
+    const invPixelStep = 1 / pixelStep;
+
+    function hslToRgb(h: number, s: number, l: number) {
+        // h in [0,1], s,l in [0,1]
+        const hue2rgb = (p: number, q: number, t: number) => {
+            if (t < 0) t += 1;
+            if (t > 1) t -= 1;
+            if (t < 1/6) return p + (q - p) * 6 * t;
+            if (t < 1/2) return q;
+            if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+            return p;
+        };
+
+        let r, g, b;
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        return [
+            Math.round(r * 255),
+            Math.round(g * 255),
+            Math.round(b * 255)
+        ];
+    }
+
+    // Fill image by bilinear interpolation of score grid
     for (let y = 0; y < mapSize.y; y++) {
+        const gy = y * invPixelStep;
+        const gy1 = gy | 0;
+        const gy2 = Math.min(gy1 + 1, gridHeight);
+        const dy = gy - gy1;
+
         for (let x = 0; x < mapSize.x; x++) {
-            const gx = x / pixelStep;
-            const gy = y / pixelStep;
-            
-            const gx1 = Math.floor(gx);
-            const gx2 = Math.min(Math.ceil(gx), gridWidth);
-            const gy1 = Math.floor(gy);
-            const gy2 = Math.min(Math.ceil(gy), gridHeight);
-            
-            let distance: number;
-            if (gx1 === gx2 && gy1 === gy2) {
-                distance = distanceGrid[gy1][gx1];
-            } else if (gx1 === gx2) {
-                distance = distanceGrid[gy1][gx1] + (distanceGrid[gy2][gx1] - distanceGrid[gy1][gx1]) * (gy - gy1);
-            } else if (gy1 === gy2) {
-                distance = distanceGrid[gy1][gx1] + (distanceGrid[gy1][gx2] - distanceGrid[gy1][gx1]) * (gx - gx1);
-            } else {
-                distance = bilinearInterpolate(
-                    gx, gy,
-                    gx1, gx2, gy1, gy2,
-                    distanceGrid[gy1][gx1],
-                    distanceGrid[gy2][gx1],
-                    distanceGrid[gy1][gx2],
-                    distanceGrid[gy2][gx2]
-                );
-            }
-            
-            const ratio = Math.min(distance / maxDistanceDegrees, 1);
+            const gx = x * invPixelStep;
+            const gx1 = gx | 0;
+            const gx2 = Math.min(gx1 + 1, gridWidth);
+            const dx = gx - gx1;
+
+            // Bilinear interpolation
+            const f00 = getGrid(gx1, gy1);
+            const f10 = getGrid(gx2, gy1);
+            const f01 = getGrid(gx1, gy2);
+            const f11 = getGrid(gx2, gy2);
+
+            const v1 = f00 + (f10 - f00) * dx;
+            const v2 = f01 + (f11 - f01) * dx;
+            const score = v1 + (v2 - v1) * dy;
+
+            const ratio = Math.min(score / globalMaxScore, 1);
+
+            // Smooth gradient: green → yellow → red (0.33 → 0.0 hue in HSL)
+            const hue = 0.33 * (ratio);
+            const [r, g, b] = hslToRgb(hue, 1, 0.5);
+
             const idx = (y * mapSize.x + x) * 4;
-            
-            if (ratio < 0.2) {
-                imageDataArray[idx] = 0;
-                imageDataArray[idx + 1] = 255;
-                imageDataArray[idx + 2] = 0;
-                imageDataArray[idx + 3] = 153;
-            } else if (ratio < 0.4) {
-                imageDataArray[idx] = 140;
-                imageDataArray[idx + 1] = 255;
-                imageDataArray[idx + 2] = 0;
-                imageDataArray[idx + 3] = 153;
-            } else if (ratio < 0.6) {
-                imageDataArray[idx] = 255;
-                imageDataArray[idx + 1] = 255;
-                imageDataArray[idx + 2] = 0;
-                imageDataArray[idx + 3] = 153;
-            } else if (ratio < 0.8) {
-                imageDataArray[idx] = 255;
-                imageDataArray[idx + 1] = 136;
-                imageDataArray[idx + 2] = 0;
-                imageDataArray[idx + 3] = 153;
-            } else {
-                imageDataArray[idx] = 255;
-                imageDataArray[idx + 1] = 0;
-                imageDataArray[idx + 2] = 0;
-                imageDataArray[idx + 3] = 153;
-            }
+            imageDataArray[idx] = r;
+            imageDataArray[idx + 1] = g;
+            imageDataArray[idx + 2] = b;
+            imageDataArray[idx + 3] = 160;
         }
     }
-    
-    // Send the computed image data back
+
+    // Send it back
     self.postMessage({ imageDataArray, width: mapSize.x, height: mapSize.y });
 };
