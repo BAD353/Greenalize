@@ -26,15 +26,14 @@ Greenalize is a web application for exploring parks and green spaces on an inter
 | Frontend Framework | React |
 | Bundler | Vite |
 | Language | TypeScript |
-| Map Library | Leaflet / Mapbox GL JS / Google Maps API |
-| Styling | Tailwind / CSS Modules / Styled Components |
+| Map Library | Leaflet |
 
 ## Instructions
 
 ### Installation 
 
 ```bash
-git clone https://github.com/American-School-of-Barcelona/Greenalize.git
+git clone https://github.com/BAD353/Greenalize.git
 
 cd Greenalize
 
