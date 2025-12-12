@@ -1,6 +1,7 @@
 import React, { Suspense, useState } from "react";
 import { forceReload } from "../../backend/mapData/mapData";
 import toast, { Toaster } from "react-hot-toast";
+import Sidebar from "../../components/sidebar/sidebar";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -20,7 +21,9 @@ const LayerButton = ({
         <div
             style={{
                 ...styles.button,
-                border: isActive ? "2px solid #71009a" : "2px solid #a5a1a1",
+                border: isActive
+                    ? "2px solid var(--button-enabled)"
+                    : "2px solid var(--button-disabled)",
             }}
             onClick={() => {
                 toggle(!isActive);
@@ -38,6 +41,7 @@ const LayerButton = ({
 export default function HomePage() {
     const [isHeatmapEnabled, toggleHeatmap] = useState(true);
     const [isParkLayerEnabled, toggleParkLayer] = useState(true);
+    const [isMenuOpen, toggleMenu] = useState(false);
     return (
         <div style={styles.page}>
             <Suspense fallback={<div>Loading map...</div>}>
@@ -49,7 +53,6 @@ export default function HomePage() {
                     style={styles.resetButton}
                     onClick={() => {
                         forceReload();
-                        console.log("MEOW!");
                     }}
                 >
                     <img
@@ -57,15 +60,7 @@ export default function HomePage() {
                         style={{ height: "1.5rem", width: "1.5rem" }}
                     />
                 </div>
-                <LayerButton
-                    isEnabled={isHeatmapEnabled}
-                    toggle={(newState: boolean) => {
-                        toggleHeatmap(newState);
-                        console.log("HeatMap:", newState);
-                    }}
-                    normalLink={"/assets/icons/map-white.svg"}
-                    activeLink={"/assets/icons/map-color.svg"}
-                />
+
                 <LayerButton
                     isEnabled={isParkLayerEnabled}
                     toggle={(newState: boolean) => {
@@ -74,7 +69,34 @@ export default function HomePage() {
                     normalLink={"/assets/icons/park-white.svg"}
                     activeLink={"/assets/icons/park-color.svg"}
                 />
+                <LayerButton
+                    isEnabled={isHeatmapEnabled}
+                    toggle={(newState: boolean) => {
+                        toggleHeatmap(newState);
+                    }}
+                    normalLink={"/assets/icons/map-white.svg"}
+                    activeLink={"/assets/icons/map-color.svg"}
+                />
             </div>
+            {isMenuOpen ? (
+                <Sidebar
+                    onClose={() => {
+                        toggleMenu(false);
+                    }}
+                />
+            ) : (
+                <div
+                    style={styles.menuButtonContainer}
+                    onClick={() => {
+                        toggleMenu(true);
+                    }}
+                >
+                    <img
+                        src={"/assets/icons/menu.svg"}
+                        style={{ height: "1.5rem", width: "1.5rem" }}
+                    />
+                </div>
+            )}
         </div>
     );
 }
@@ -116,5 +138,18 @@ const styles: Record<string, React.CSSProperties> = {
         display: "flex",
         justifyContent: "center",
         alignItems: "center",
+    },
+    menuButtonContainer: {
+        position: "absolute",
+        top: "1rem",
+        left: "1rem",
+        display: "flex",
+        gap: "1rem",
+        border: "2px solid var(--button-enabled)",
+        background: "#fff",
+        padding: "0.5rem 0.5rem",
+        borderRadius: "10px",
+        cursor: "pointer",
+        zIndex: "100",
     },
 };

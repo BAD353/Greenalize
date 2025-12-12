@@ -8,6 +8,8 @@ body {
   user-select:none;
   --black-text-color: #000000;
   --background: #ffffff;
+  --button-enabled: #71009A;
+  --button-disabled: #A5A1A1;
 }
 
 p {

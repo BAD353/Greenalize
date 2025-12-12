@@ -84,12 +84,13 @@ export default function Map({
         const lng = parseFloat(params.get("lng") || "2.17");
         const zoom = parseInt(params.get("zoom") || "14", 10);
 
-        mapRef.current = L.map("map").setView([lat, lng], zoom);
+        mapRef.current = L.map("map", { zoomControl: false }).setView([lat, lng], zoom);
         mapRef.current.setMinZoom(13);
 
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
             attribution: "&copy; OpenStreetMap contributors",
             maxZoom: 19,
+            updateWhenZooming:false,
         }).addTo(mapRef.current);
 
         loadParks(showParks, showHeatmap);
