@@ -59,7 +59,7 @@ function isPointInPolygon(
 
 
 self.onmessage = function (e: MessageEvent) {
-    const { parks, mapSize, latLngGrid, pixelStep = 20 } = e.data;
+    const { parks, mapSize, latLngGrid, pixelStep } = e.data;
 
     const gridWidth = Math.ceil(mapSize.x / pixelStep);
     const gridHeight = Math.ceil(mapSize.y / pixelStep);
@@ -104,7 +104,6 @@ self.onmessage = function (e: MessageEvent) {
             if (score*0.8 > globalMaxScore) globalMaxScore = score*0.8;
         }
     }
-    console.error('Global max score:', globalMaxScore);
     // Prepare pixel buffer
     const imageDataArray = new Uint8ClampedArray(mapSize.x * mapSize.y * 4);
     const invPixelStep = 1 / pixelStep;

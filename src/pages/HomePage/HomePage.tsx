@@ -1,4 +1,4 @@
-import React, { Suspense, useState } from "react";
+import React, { Suspense, useEffect, useState } from "react";
 import { forceReload } from "../../backend/mapData/mapData";
 import toast, { Toaster } from "react-hot-toast";
 import Sidebar from "../../components/sidebar/sidebar";
@@ -17,13 +17,16 @@ const LayerButton = ({
     activeLink: string;
 }) => {
     const [isActive, setActive] = useState(isEnabled);
+    useEffect(() => {
+        setActive(isEnabled);
+    }, [isEnabled]);
     return (
         <div
             style={{
                 ...styles.button,
                 border: isActive
-                    ? "2px solid var(--button-enabled)"
-                    : "2px solid var(--button-disabled)",
+                    ? "2px solid #fff"
+                    : "2px solid #a5a1a1",
             }}
             onClick={() => {
                 toggle(!isActive);
@@ -39,13 +42,13 @@ const LayerButton = ({
 };
 
 export default function HomePage() {
-    const [isHeatmapEnabled, toggleHeatmap] = useState(true);
-    const [isParkLayerEnabled, toggleParkLayer] = useState(true);
+    const [isHeatmapLayerEnabled, setHeatmapLayer] = useState(true);
+    const [isParkLayerEnabled, setParkLayer] = useState(true);
     const [isMenuOpen, toggleMenu] = useState(false);
     return (
         <div style={styles.page}>
             <Suspense fallback={<div>Loading map...</div>}>
-                <Map showHeatmap={isHeatmapEnabled} showParks={isParkLayerEnabled} />
+                <Map showHeatmap={isHeatmapLayerEnabled} showParks={isParkLayerEnabled} />
             </Suspense>
 
             <div style={styles.buttons}>
@@ -64,18 +67,18 @@ export default function HomePage() {
                 <LayerButton
                     isEnabled={isParkLayerEnabled}
                     toggle={(newState: boolean) => {
-                        toggleParkLayer(newState);
+                        setParkLayer(newState);
                     }}
-                    normalLink={"/assets/icons/park-white.svg"}
-                    activeLink={"/assets/icons/park-color.svg"}
+                    normalLink={"/assets/icons/park-normal.svg"}
+                    activeLink={"/assets/icons/park-active.svg"}
                 />
                 <LayerButton
-                    isEnabled={isHeatmapEnabled}
+                    isEnabled={isHeatmapLayerEnabled}
                     toggle={(newState: boolean) => {
-                        toggleHeatmap(newState);
+                        setHeatmapLayer(newState);
                     }}
-                    normalLink={"/assets/icons/map-white.svg"}
-                    activeLink={"/assets/icons/map-color.svg"}
+                    normalLink={"/assets/icons/map-normal.svg"}
+                    activeLink={"/assets/icons/map-active.svg"}
                 />
             </div>
             {isMenuOpen ? (
@@ -83,6 +86,10 @@ export default function HomePage() {
                     onClose={() => {
                         toggleMenu(false);
                     }}
+                    showParks={isParkLayerEnabled}
+                    showHeatmap={isHeatmapLayerEnabled}
+                    onSetParks={(value) => setParkLayer(value)}
+                    onSetHeatmap={(value) => setHeatmapLayer(value)}
                 />
             ) : (
                 <div
@@ -107,7 +114,7 @@ const styles: Record<string, React.CSSProperties> = {
         width: "100vw",
         margin: 0,
         position: "relative",
-        fontFamily: "Roboto, sans-serif",
+        fontFamily: "Inter, sans-serif",
     },
     buttons: {
         position: "absolute",
@@ -115,15 +122,13 @@ const styles: Record<string, React.CSSProperties> = {
         right: "1rem",
         display: "flex",
         gap: "1rem",
-        border: "2px solid #ccc",
-        background: "#fff",
+        background: "var(--background)",
         padding: "0.5rem 1rem",
         borderRadius: "10px",
         zIndex: "100",
     },
     button: {
         borderRadius: "5px",
-        border: "1px solid #ccc",
         cursor: "pointer",
         height: "2rem",
         width: "2rem",
@@ -141,14 +146,19 @@ const styles: Record<string, React.CSSProperties> = {
     },
     menuButtonContainer: {
         position: "absolute",
-        top: "1rem",
-        left: "1rem",
+        top: "1.5rem",
+        left: "1.5rem",
+
         display: "flex",
-        gap: "1rem",
-        border: "2px solid var(--button-enabled)",
-        background: "#fff",
-        padding: "0.5rem 0.5rem",
+        justifyContent: "center",
+        alignItems: "center",
+
+        width: "2.5rem",
+        height: "2.5rem",
+
+        background: "var(--background)",
         borderRadius: "10px",
+
         cursor: "pointer",
         zIndex: "100",
     },

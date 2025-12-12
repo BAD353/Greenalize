@@ -222,6 +222,7 @@ export default function Map({
                     parks: parks.map((p) => ({ coordinates: p.coordinates, area:p.area })),
                     mapSize: { x: mapSize.x, y: mapSize.y },
                     latLngGrid,
+                    pixelStep
                 });
             } else if (!showHeatmap && heatmapOverlayRef.current) {
                 // Remove heatmap if it's turned off

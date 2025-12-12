@@ -282,10 +282,10 @@ const styles: Record<string, React.CSSProperties> = {
     page: {
         height: "100vh",
         width: "100vw",
-        backgroundColor: "var(--background)",
+        backgroundColor: "#fff",
         display: "flex",
         justifyContent: "center",
-        fontFamily: "Roboto, sans-serif",
+        fontFamily: "Inter, sans-serif",
         color: "#2e4631",
     },
     container: {
