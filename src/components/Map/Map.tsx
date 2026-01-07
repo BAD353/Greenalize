@@ -201,29 +201,34 @@ export default function Map({
 
       if (showHeatmap && parks.length > 0 && workerRef.current) {
         const mapSize = mapRef.current.getSize();
-        const pixelStep = 20;
 
-        const gridWidth = Math.ceil(mapSize.x / pixelStep);
-        const gridHeight = Math.ceil(mapSize.y / pixelStep);
+        // Coordinate-based grid: use lat/lng steps instead of pixel steps
+        const coordStep = 0.001; // ~100m at this latitude
 
-        // Pre-calculate lat/lng for each grid point
-        const latLngGrid: { lat: number; lng: number }[][] = [];
+        const latRange = north - south;
+        const lngRange = east - west;
+
+        const gridHeight = Math.ceil(latRange / coordStep);
+        const gridWidth = Math.ceil(lngRange / coordStep);
+
+        // Build coordinate grid
+        const coordGrid: { lat: number; lng: number }[][] = [];
         for (let gy = 0; gy <= gridHeight; gy++) {
-          latLngGrid[gy] = [];
+          coordGrid[gy] = [];
           for (let gx = 0; gx <= gridWidth; gx++) {
-            const pixelX = gx * pixelStep;
-            const pixelY = gy * pixelStep;
-            const latLng = mapRef.current.containerPointToLatLng([pixelX, pixelY]);
-            latLngGrid[gy][gx] = { lat: latLng.lat, lng: latLng.lng };
+            const lat = north - gy * coordStep;
+            const lng = west + gx * coordStep;
+            coordGrid[gy][gx] = { lat, lng };
           }
         }
 
-        // Send data to worker
+        // Send data to worker with coordinate-based grid
         workerRef.current.postMessage({
           parks: parks.map((p) => ({ coordinates: p.coordinates, area: p.area })),
           mapSize: { x: mapSize.x, y: mapSize.y },
-          latLngGrid,
-          pixelStep,
+          coordGrid,
+          coordStep,
+          bounds: { north, south, east, west },
         });
       } else if (!showHeatmap && heatmapOverlayRef.current) {
         // Remove heatmap if it's turned off

@@ -48,20 +48,26 @@ function isPointInPolygon(lat: number, lng: number, parkCoords: [number, number]
   return inside;
 }
 
-self.onmessage = function (e: MessageEvent) {
-  const { parks, mapSize, latLngGrid, pixelStep } = e.data;
+// Cache for computed scores at coordinate grid points
+const scoreCache = new Map<string, number>();
 
-  const gridWidth = Math.ceil(mapSize.x / pixelStep);
-  const gridHeight = Math.ceil(mapSize.y / pixelStep);
+function getCacheKey(lat: number, lng: number): string {
+  // Round to 6 decimal places for cache key (~10cm precision)
+  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+self.onmessage = function (e: MessageEvent) {
+  const { parks, mapSize, coordGrid, coordStep, bounds } = e.data;
+
+  const gridHeight = coordGrid.length - 1;
+  const gridWidth = coordGrid[0].length - 1;
 
   const epsilon = 1e-9;
-
-  // Flattened score grid
   const scoreGrid = new Float32Array((gridWidth + 1) * (gridHeight + 1));
 
   const getGrid = (gx: number, gy: number) => scoreGrid[gy * (gridWidth + 1) + gx];
 
-  // Compute scores at grid points
+  // Compute scores at grid points with caching
   let globalMaxScore = 0;
   const minDist = 0.002;
   const distanceScalePow = 1.5;
@@ -71,38 +77,53 @@ self.onmessage = function (e: MessageEvent) {
 
   for (let gy = 0; gy <= gridHeight; gy++) {
     for (let gx = 0; gx <= gridWidth; gx++) {
-      const latLng = latLngGrid[gy][gx];
+      const { lat, lng } = coordGrid[gy][gx];
+      const cacheKey = getCacheKey(lat, lng);
 
-      let sumWeightedDist = 0;
+      let score: number;
 
-      for (const park of parks) {
-        if (park.area < minArea || park.area == undefined) continue;
-        const inside = isPointInPolygon(latLng.lat, latLng.lng, park.coordinates);
-        if (inside) {
+      // Check cache first
+      if (scoreCache.has(cacheKey)) {
+        score = scoreCache.get(cacheKey)!;
+      } else {
+        // Compute score
+        let sumWeightedDist = 0;
+
+        for (const park of parks) {
+          if (park.area < minArea || park.area == undefined) continue;
+
+          const inside = isPointInPolygon(lat, lng, park.coordinates);
+          if (inside) {
+            sumWeightedDist +=
+              Math.pow(Math.min(park.area, maxArea), areaScalePow) /
+              Math.pow(minDist, distanceScalePow);
+            continue;
+          }
+
+          const dist = pointToPolygonDistance(lat, lng, park.coordinates);
           sumWeightedDist +=
             Math.pow(Math.min(park.area, maxArea), areaScalePow) /
-            Math.pow(minDist, distanceScalePow); // If inside, set to area or 1
-          continue;
+            Math.pow(Math.max(dist, minDist), distanceScalePow);
         }
 
-        const dist = pointToPolygonDistance(latLng.lat, latLng.lng, park.coordinates);
-        sumWeightedDist +=
-          Math.pow(Math.min(park.area, maxArea), areaScalePow) /
-          Math.pow(Math.max(dist, minDist), distanceScalePow);
+        score = sumWeightedDist + epsilon;
+
+        // Store in cache (limit cache size to prevent memory issues)
+        if (scoreCache.size < 100000) {
+          scoreCache.set(cacheKey, score);
+        }
       }
 
-      const score = sumWeightedDist + epsilon;
       scoreGrid[gy * (gridWidth + 1) + gx] = score;
 
       if (score * 0.8 > globalMaxScore) globalMaxScore = score * 0.8;
     }
   }
+
   // Prepare pixel buffer
   const imageDataArray = new Uint8ClampedArray(mapSize.x * mapSize.y * 4);
-  const invPixelStep = 1 / pixelStep;
 
   function hslToRgb(h: number, s: number, l: number) {
-    // h in [0,1], s,l in [0,1]
     const hue2rgb = (p: number, q: number, t: number) => {
       if (t < 0) t += 1;
       if (t > 1) t -= 1;
@@ -125,16 +146,27 @@ self.onmessage = function (e: MessageEvent) {
     return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
-  // Fill image by bilinear interpolation of score grid
+  // Map pixels to coordinate grid using bilinear interpolation
+  const latRange = bounds.north - bounds.south;
+  const lngRange = bounds.east - bounds.west;
+
   for (let y = 0; y < mapSize.y; y++) {
-    const gy = y * invPixelStep;
-    const gy1 = gy | 0;
+    // Convert pixel y to latitude
+    const lat = bounds.north - (y / mapSize.y) * latRange;
+
+    // Find grid position in coordinate space
+    const gy = (bounds.north - lat) / coordStep;
+    const gy1 = Math.floor(gy);
     const gy2 = Math.min(gy1 + 1, gridHeight);
     const dy = gy - gy1;
 
     for (let x = 0; x < mapSize.x; x++) {
-      const gx = x * invPixelStep;
-      const gx1 = gx | 0;
+      // Convert pixel x to longitude
+      const lng = bounds.west + (x / mapSize.x) * lngRange;
+
+      // Find grid position in coordinate space
+      const gx = (lng - bounds.west) / coordStep;
+      const gx1 = Math.floor(gx);
       const gx2 = Math.min(gx1 + 1, gridWidth);
       const dx = gx - gx1;
 
