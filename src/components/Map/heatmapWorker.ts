@@ -51,9 +51,10 @@ function isPointInPolygon(lat: number, lng: number, parkCoords: [number, number]
 // Cache for computed scores at coordinate grid points
 const scoreCache = new Map<string, number>();
 
-function getCacheKey(lat: number, lng: number): string {
-  // Round to 6 decimal places for cache key (~10cm precision)
-  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+function getCacheKey(lat: number, lng: number, coordStep: number): string {
+  const latKey = Math.round(lat / coordStep);
+  const lngKey = Math.round(lng / coordStep);
+  return `${latKey},${lngKey}`;
 }
 
 self.onmessage = function (e: MessageEvent) {
@@ -78,7 +79,7 @@ self.onmessage = function (e: MessageEvent) {
   for (let gy = 0; gy <= gridHeight; gy++) {
     for (let gx = 0; gx <= gridWidth; gx++) {
       const { lat, lng } = coordGrid[gy][gx];
-      const cacheKey = getCacheKey(lat, lng);
+      const cacheKey = getCacheKey(lat, lng, coordStep);
 
       let score: number;
 
