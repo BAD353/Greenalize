@@ -203,7 +203,8 @@ export default function Map({
         const mapSize = mapRef.current.getSize();
 
         // Coordinate-based grid: use lat/lng steps instead of pixel steps
-        const coordStep = 0.001; // ~100m at this latitude
+        const zoom = mapRef.current.getZoom();
+        const coordStep = zoom <= 13 ? 0.01 : zoom == 14 ? 0.005 : zoom == 15 ? 0.002 : 0.001;
 
         const latRange = north - south;
         const lngRange = east - west;

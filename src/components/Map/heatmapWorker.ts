@@ -69,7 +69,8 @@ self.onmessage = function (e: MessageEvent) {
   const getGrid = (gx: number, gy: number) => scoreGrid[gy * (gridWidth + 1) + gx];
 
   // Compute scores at grid points with caching
-  let globalMaxScore = 0;
+  let globalMaxScore = 2e11;
+
   const minDist = 0.002;
   const distanceScalePow = 1.5;
   const areaScalePow = 1.5;
@@ -117,10 +118,8 @@ self.onmessage = function (e: MessageEvent) {
 
       scoreGrid[gy * (gridWidth + 1) + gx] = score;
 
-      if (score * 0.8 > globalMaxScore) globalMaxScore = score * 0.8;
     }
   }
-
   // Prepare pixel buffer
   const imageDataArray = new Uint8ClampedArray(mapSize.x * mapSize.y * 4);
 
