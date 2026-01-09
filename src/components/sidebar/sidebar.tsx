@@ -176,6 +176,8 @@ const styles: Record<string, React.CSSProperties> = {
     boxSizing: "border-box",
     gap: "1rem",
     background: "var(--background)",
+    borderRight: "3px solid var(--button-border-green)",
+    borderBottom: "3px solid var(--button-border-green)",
     padding: "1rem 1rem",
     borderBottomRightRadius: "15px",
     zIndex: "100",
@@ -209,6 +211,7 @@ const styles: Record<string, React.CSSProperties> = {
   label: {
     fontSize: "1rem",
     color: "var(--text-normal)",
+    fontWeight: "500",
   },
   slider: {
     width: "100%",

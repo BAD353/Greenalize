@@ -234,7 +234,7 @@ export default function LandingPage() {
         <div
           style={{
             ...styles.nextButton,
-            background: coords ? (hovered ? "#6f8f71ff" : "#79a37cff") : "#bbbbbbff",
+            background: coords ? (hovered ? "#6f8f71ff" : "var(--border-green)") : "#bbbbbbff",
             boxShadow: coords ? `0 6px 16px rgba(121, 163, 124, ${hovered ? 0.5 : 0.3})` : "",
             cursor: coords ? "pointer" : "default",
           }}
@@ -307,7 +307,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "12px 18px",
     fontSize: "1rem",
     borderRadius: 12,
-    border: "2px solid #79a37cff",
+    border: "2px solid var(--border-green)",
     outline: "none",
     boxSizing: "border-box",
     boxShadow: "0 8px 30px rgba(121, 163, 124, 0.15)",
@@ -319,7 +319,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: "1rem",
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
-    border: "2px solid #79a37cff",
+    border: "2px solid var(--border-green)",
     borderBottomStyle: "dashed",
     outline: "none",
     boxSizing: "border-box",
@@ -332,7 +332,7 @@ const styles: Record<string, React.CSSProperties> = {
     left: 0,
     right: 0,
     backgroundColor: "white",
-    border: "2px solid #79a37cff",
+    border: "2px solid var(--border-green)",
     borderTop: "none",
     borderRadius: "0 0 12px 12px",
     boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
@@ -350,7 +350,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   map: {
     width: "30vw",
-    border: "2px solid #79a37cff",
+    border: "2px solid var(--border-green)",
     backgroundColor: "#f2fbf3",
     height: 250,
     display: "flex",
@@ -373,7 +373,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "12px",
   },
   nextButton: {
-    backgroundColor: "#79a37cff", // soft green
+    backgroundColor: "var(--border-green)", // soft green
     color: "white",
     border: "none",
     borderRadius: "12px",

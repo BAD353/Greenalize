@@ -24,11 +24,11 @@ const LayerButton = ({
     <div
       style={{
         ...styles.button,
-        border: isActive ? "2px solid #fff" : "2px solid #a5a1a1",
+        border: isActive ? "2px solid var(--button-border-green)" : "2px solid #a5a1a1",
       }}
       onClick={() => {
-        toggle(!isActive);
         setActive(!isActive);
+        toggle(!isActive);
       }}
     >
       <img src={isActive ? activeLink : normalLink} style={{ height: "1.5rem", width: "1.5rem" }} />
@@ -115,6 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0.5rem 1rem",
     borderRadius: "10px",
     zIndex: "100",
+    border: "2px solid var(--button-border-green)",
   },
   button: {
     borderRadius: "5px",
@@ -147,6 +148,7 @@ const styles: Record<string, React.CSSProperties> = {
 
     background: "var(--background)",
     borderRadius: "10px",
+    border: "2px solid var(--button-border-green)",
 
     cursor: "pointer",
     zIndex: "100",
