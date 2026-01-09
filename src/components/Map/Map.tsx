@@ -5,9 +5,6 @@ import { getBoundedParkData, updateParkData } from "../../backend/mapData/mapDat
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import getParkColorByArea from "../../utils/parkColor";
 
-let mapView: [[number, number], number] = [[41.38, 2.17], 14];
-
-// Create worker from inline code
 function createHeatmapWorker() {
   return new Worker(new URL("./heatmapWorker.ts", import.meta.url), { type: "module" });
 }
@@ -21,56 +18,43 @@ export default function Map({
 }) {
   const mapRef = useRef<L.Map | null>(null);
   const parksLayerRef = useRef<L.GeoJSON | null>(null);
-  const heatmapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const heatmapOverlayRef = useRef<L.ImageOverlay | null>(null);
   const workerRef = useRef<Worker | null>(null);
+
+  const heatmapExtraFactor = 0.2;
   let lastUpdate = performance.now();
 
   useEffect(() => {
-    // Initialize Web Worker
     workerRef.current = createHeatmapWorker();
 
-    workerRef.current.onmessage = function (e: MessageEvent) {
-      const { imageDataArray, width, height } = e.data;
-
+    workerRef.current.onmessage = (e: MessageEvent) => {
       if (!mapRef.current) return;
 
-      // Create canvas with the computed data
+      const { imageDataArray, width, height, bounds } = e.data;
+
       const canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext("2d")!;
+      ctx.putImageData(new ImageData(imageDataArray, width, height), 0, 0);
 
-      const imageData = new ImageData(imageDataArray, width, height);
-      ctx.putImageData(imageData, 0, 0);
-
-      const mapSize = mapRef.current.getSize();
-      const topLeft = mapRef.current.containerPointToLatLng([0, 0]);
-      const bottomRight = mapRef.current.containerPointToLatLng([mapSize.x, mapSize.y]);
-
-      // Remove old heatmap
       if (heatmapOverlayRef.current) {
         mapRef.current.removeLayer(heatmapOverlayRef.current);
-        heatmapOverlayRef.current = null;
       }
 
       heatmapOverlayRef.current = L.imageOverlay(
         canvas.toDataURL(),
         [
-          [topLeft.lat, topLeft.lng],
-          [bottomRight.lat, bottomRight.lng],
+          [bounds.north, bounds.west],
+          [bounds.south, bounds.east],
         ],
         { opacity: 1, interactive: false }
       ).addTo(mapRef.current);
-
-      heatmapCanvasRef.current = canvas;
     };
 
     return () => {
-      if (workerRef.current) {
-        workerRef.current.terminate();
-        workerRef.current = null;
-      }
+      workerRef.current?.terminate();
+      workerRef.current = null;
     };
   }, []);
 
@@ -95,35 +79,16 @@ export default function Map({
 
     loadParks(showParks, showHeatmap);
 
-    function updateURL() {
-      if (!mapRef.current) return;
-      const center = mapRef.current.getCenter();
-      const zoom = mapRef.current.getZoom();
-      const newParams = new URLSearchParams(window.location.search);
-
-      newParams.set("lat", center.lat.toFixed(5));
-      newParams.set("lng", center.lng.toFixed(5));
-      newParams.set("zoom", zoom.toString());
-
-      const newUrl = `${window.location.pathname}?${newParams.toString()}`;
-      window.history.replaceState({}, "", newUrl);
-    }
-
     mapRef.current.on("moveend", () => {
       if (performance.now() - lastUpdate > 500) {
         lastUpdate = performance.now();
         loadParks(showParks, showHeatmap);
       }
-      updateURL();
     });
 
-    mapRef.current.on("zoomend", updateURL);
-
     return () => {
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
+      mapRef.current?.remove();
+      mapRef.current = null;
     };
   }, [showParks, showHeatmap]);
 
@@ -199,12 +164,11 @@ export default function Map({
         }).addTo(mapRef.current);
       }
 
-      if (showHeatmap && parks.length > 0 && workerRef.current) {
+      if (showHeatmap && parks.length && workerRef.current) {
         const mapSize = mapRef.current.getSize();
-
-        // Coordinate-based grid: use lat/lng steps instead of pixel steps
         const zoom = mapRef.current.getZoom();
-        const coordStep = zoom <= 13 ? 0.01 : zoom == 14 ? 0.005 : zoom == 15 ? 0.002 : 0.001;
+
+        const coordStep = zoom <= 13 ? 0.005 : zoom === 14 ? 0.002 : zoom === 15 ? 0.001 : 0.0005;
 
         const latRange = north - south;
         const lngRange = east - west;
@@ -212,27 +176,22 @@ export default function Map({
         const gridHeight = Math.ceil(latRange / coordStep);
         const gridWidth = Math.ceil(lngRange / coordStep);
 
-        // Build coordinate grid
-        const coordGrid: { lat: number; lng: number }[][] = [];
-        for (let gy = 0; gy <= gridHeight; gy++) {
-          coordGrid[gy] = [];
-          for (let gx = 0; gx <= gridWidth; gx++) {
-            const lat = north - gy * coordStep;
-            const lng = west + gx * coordStep;
-            coordGrid[gy][gx] = { lat, lng };
-          }
-        }
+        const coordGrid = Array.from({ length: gridHeight + 1 }, (_, gy) =>
+          Array.from({ length: gridWidth + 1 }, (_, gx) => ({
+            lat: north - gy * coordStep,
+            lng: west + gx * coordStep,
+          }))
+        );
 
-        // Send data to worker with coordinate-based grid
         workerRef.current.postMessage({
           parks: parks.map((p) => ({ coordinates: p.coordinates, area: p.area })),
           mapSize: { x: mapSize.x, y: mapSize.y },
           coordGrid,
           coordStep,
           bounds: { north, south, east, west },
+          heatmapExtraFactor,
         });
       } else if (!showHeatmap && heatmapOverlayRef.current) {
-        // Remove heatmap if it's turned off
         mapRef.current.removeLayer(heatmapOverlayRef.current);
         heatmapOverlayRef.current = null;
       }
