@@ -1,5 +1,5 @@
 # Greenalize
-## Description
+### Description
 
 Greenalize is a web application for exploring parks and green spaces on an interactive map. It features a heatmap visualization to highlight areas with strong or weak access to green spaces. Built with React, TypeScript, Vite, and Leaflet, Greenalize is fast, modern, and scaleable.
 
