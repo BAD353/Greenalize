@@ -35,6 +35,7 @@ export default function convertToParkList(elements: OsmElement[]): Park[] {
                 boundingBox: bbox,
                 area: area,
                 center: [centrLat,centerLon],
+                tags: ["park"]
             });
         }
     });

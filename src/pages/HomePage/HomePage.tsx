@@ -1,7 +1,16 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import { forceReload } from "../../backend/mapData/mapData";
 import toast, { Toaster } from "react-hot-toast";
 import Sidebar from "../../components/sidebar/sidebar";
+import {
+  deletePark,
+  getDeletedParks,
+  restorePark,
+  loadDeletedParks,
+  type DeletedPark,
+  clearDeletedParks,
+} from "../../backend/mapData/deletedParks";
+import type { MapHandle } from "../../components/Map/Map";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -40,10 +49,43 @@ export default function HomePage() {
   const [isHeatmapLayerEnabled, setHeatmapLayer] = useState(true);
   const [isParkLayerEnabled, setParkLayer] = useState(true);
   const [isMenuOpen, toggleMenu] = useState(false);
+  const [deletedParks, setDeletedParks] = useState<DeletedPark[]>([]);
+
+  const mapRef = useRef<MapHandle>(null);
+
+  const [mapRefreshKey, setMapRefreshKey] = useState(0);
+
+  const handleDeletePark = async (park) => {
+    await deletePark(park);
+    setDeletedParks(getDeletedParks());
+    setMapRefreshKey((k) => k + 1);
+  }
+
+  const handleRestorePark = async (id) => {
+    await restorePark(id);
+    setDeletedParks(getDeletedParks());
+    setMapRefreshKey((k) => k + 1); // same
+  };
+
+  const handleClearDeleted = async () => {
+    await clearDeletedParks();
+    setDeletedParks([]);
+    setMapRefreshKey((k) => k + 1);
+  };
+
+  // On mount, load persisted deleted parks
+  useEffect(() => {
+    loadDeletedParks().then(() => setDeletedParks(getDeletedParks()));
+  }, []);
   return (
     <div style={styles.page}>
       <Suspense fallback={<div>Loading map...</div>}>
-        <Map showHeatmap={isHeatmapLayerEnabled} showParks={isParkLayerEnabled} />
+        <Map
+          showHeatmap={isHeatmapLayerEnabled}
+          showParks={isParkLayerEnabled}
+          onDeletePark={handleDeletePark}
+          refreshKey={mapRefreshKey}
+        />
       </Suspense>
 
       <div style={styles.buttons}>
@@ -82,6 +124,9 @@ export default function HomePage() {
           showHeatmap={isHeatmapLayerEnabled}
           onSetParks={(value) => setParkLayer(value)}
           onSetHeatmap={(value) => setHeatmapLayer(value)}
+          deletedParks={deletedParks}
+          onRestorePark={handleRestorePark}
+          onClearDeleted={handleClearDeleted}
         />
       ) : (
         <div

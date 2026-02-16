@@ -6,4 +6,5 @@ export interface Park {
     center: [number, number];
     boundingBox: [number, number, number, number]; // [north, east, south, west]
     area: number;
+    tags: [string];
 }
