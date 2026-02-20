@@ -1,10 +1,11 @@
-import { useEffect, useRef, forwardRef, useImperativeHandle, useCallback } from "react";
+import { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getBoundedParkData, updateParkData } from "../../backend/mapData/mapData";
-import type { Feature, FeatureCollection, Polygon } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon } from "geojson";
 import getParkColorByArea from "../../utils/parkColor";
 import type { DeletedPark } from "../../backend/mapData/deletedParks";
+import type { Park } from "../../types/park";
 
 const HEATMAP_EXTRA_FACTOR = 0.2;
 const MOVE_DEBOUNCE_MS = 500;
@@ -17,19 +18,27 @@ function createHeatmapWorker() {
   return new Worker(new URL("./heatmapWorker.ts", import.meta.url), { type: "module" });
 }
 
-const Map = forwardRef<MapHandle, {
+type MapProps = {
   showHeatmap: boolean;
   showParks: boolean;
   onDeletePark: (park: DeletedPark) => void;
   refreshKey: number;
-}>(function Map({ showHeatmap, showParks, onDeletePark, refreshKey }, ref) {
+};
+
+const Map = forwardRef<MapHandle, MapProps>(
+  function Map(
+    { showHeatmap, showParks, onDeletePark, refreshKey },
+    ref
+  ) {
   const mapRef = useRef<L.Map | null>(null);
   const parksLayerRef = useRef<L.GeoJSON | null>(null);
   const heatmapOverlayRef = useRef<L.ImageOverlay | null>(null);
 
+  // Worker ref is replaced on every heatmap request to discard stale computations
   const workerRef = useRef<Worker | null>(null);
   const lastMoveRef = useRef<number>(performance.now());
 
+  // Mirror props into refs so all callbacks always read current values without stale closures
   const showParksRef = useRef(showParks);
   const showHeatmapRef = useRef(showHeatmap);
   useEffect(() => { showParksRef.current = showParks; }, [showParks]);
@@ -38,6 +47,7 @@ const Map = forwardRef<MapHandle, {
   const onDeleteParkRef = useRef(onDeletePark);
   useEffect(() => { onDeleteParkRef.current = onDeletePark; }, [onDeletePark]);
 
+  // Reassigned every render so the handle and the refreshKey effect always get the fresh closure
   const redrawParksRef = useRef<() => void>(() => {});
 
   useImperativeHandle(ref, () => ({
@@ -83,7 +93,7 @@ const Map = forwardRef<MapHandle, {
     };
   }, [showParks, showHeatmap]);
 
-  // Redraws whenever the parent increments refreshKey (delete or restore)
+  // Triggered by parent incrementing refreshKey on delete or restore
   useEffect(() => {
     if (!mapRef.current) return;
     redrawParksRef.current();
@@ -139,7 +149,7 @@ const Map = forwardRef<MapHandle, {
     return row;
   }
 
-  function buildPopupContent(feature: Feature<Polygon, any>): HTMLDivElement {
+  function buildPopupContent(feature: Feature<MultiPolygon, any>): HTMLDivElement {
     const { id, name, area, tags } = feature.properties;
     const hasName = name?.length > 3;
 
@@ -162,7 +172,6 @@ const Map = forwardRef<MapHandle, {
     deleteBtn.onclick = () => {
       onDeleteParkRef.current({ id, name: hasName ? name : `Park ${id}`, area, tags: tags ?? [] });
       mapRef.current?.closePopup();
-      // Redraw immediately via ref — parent's refreshKey effect will also fire shortly after
       redrawParksRef.current();
     };
 
@@ -179,6 +188,30 @@ const Map = forwardRef<MapHandle, {
     return container;
   }
 
+  // ─── GeoJSON conversion ───────────────────────────────────────────────────────
+
+  // Convert a Park to a GeoJSON MultiPolygon feature.
+  // Internal coords are [lat, lon]; GeoJSON expects [lon, lat].
+  function parkToFeature(park: Park): Feature<MultiPolygon, any> {
+    return {
+      type: "Feature",
+      geometry: {
+        type: "MultiPolygon",
+        // polygons[i][j] is a ring of [lat, lon] pairs — flip to [lon, lat] for GeoJSON
+        coordinates: park.polygons.map((polygon) =>
+          polygon.map((ring) => ring.map(([lat, lon]) => [lon, lat]))
+        ),
+      },
+      properties: {
+        id: park.id,
+        name: park.name ?? "",
+        area: park.area ?? -1,
+        tags: park.tags ?? [],
+        bbox: park.boundingBox,
+      },
+    };
+  }
+
   // ─── Draw helpers ─────────────────────────────────────────────────────────────
 
   function getExpandedBounds(factor = 0.5) {
@@ -193,7 +226,7 @@ const Map = forwardRef<MapHandle, {
     };
   }
 
-  function paintLayers(parks: ReturnType<typeof getBoundedParkData>, bounds: ReturnType<typeof getExpandedBounds>) {
+  function paintLayers(parks: Park[], bounds: ReturnType<typeof getExpandedBounds>) {
     if (!mapRef.current) return;
     const { viewNorth, viewSouth, viewEast, viewWest } = bounds;
 
@@ -201,20 +234,9 @@ const Map = forwardRef<MapHandle, {
     parksLayerRef.current = null;
 
     if (showParksRef.current) {
-      const geojson: FeatureCollection<Polygon, any> = {
+      const geojson: FeatureCollection<MultiPolygon, any> = {
         type: "FeatureCollection",
-        features: parks.map((park) => ({
-          type: "Feature",
-          geometry: {
-            type: "Polygon",
-            coordinates: [park.coordinates.map(([lat, lng]) => [lng, lat])],
-          },
-          properties: {
-            id: park.id, name: park.name ?? "",
-            area: park.area ?? -1, tags: park.tags ?? [],
-            bbox: park.boundingBox,
-          },
-        })),
+        features: parks.map(parkToFeature),
       };
 
       parksLayerRef.current = L.geoJSON(geojson, {
@@ -225,7 +247,7 @@ const Map = forwardRef<MapHandle, {
           fillOpacity: 0.5,
         }),
         onEachFeature: (feature, layer) => {
-          layer.bindPopup(buildPopupContent(feature));
+          layer.bindPopup(buildPopupContent(feature as Feature<MultiPolygon, any>));
         },
       }).addTo(mapRef.current);
     }
@@ -250,8 +272,12 @@ const Map = forwardRef<MapHandle, {
         }))
       );
 
+      // Send all outer rings of all polygons — the worker scores against every ring
       spawnHeatmapWorker({
-        parks: parks.map((p) => ({ coordinates: p.coordinates, area: p.area })),
+        parks: parks.map((p) => ({
+          outerRings: p.polygons.map((poly) => poly[0]),
+          area: p.area,
+        })),
         mapSize: { x: mapSize.x, y: mapSize.y },
         coordGrid, coordStep,
         bounds: { north: viewNorth, south: viewSouth, east: viewEast, west: viewWest },
@@ -267,7 +293,6 @@ const Map = forwardRef<MapHandle, {
 
   // ─── Entry points ─────────────────────────────────────────────────────────────
 
-  // Lightweight: re-filters in-memory data and repaints without fetching tiles
   function redrawParks() {
     if (!mapRef.current) return;
     const bounds = getExpandedBounds();
@@ -275,10 +300,10 @@ const Map = forwardRef<MapHandle, {
     paintLayers(parks, bounds);
   }
 
-  // Keep the ref pointing to the freshest closure after every render
+  // Keep ref current every render so stale-closure issues are impossible
   redrawParksRef.current = redrawParks;
 
-  // Full load: fetches any missing tiles then repaints - used on init and moveend
+  // Full load: fetches missing tiles then repaints — used on init and moveend
   async function fetchAndLoad() {
     if (!mapRef.current) return;
     const bounds = getExpandedBounds();

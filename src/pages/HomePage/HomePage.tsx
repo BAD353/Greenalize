@@ -11,6 +11,7 @@ import {
   clearDeletedParks,
 } from "../../backend/mapData/deletedParks";
 import type { MapHandle } from "../../components/Map/Map";
+import { clear } from "idb-keyval";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -92,6 +93,15 @@ export default function HomePage() {
         <div
           style={styles.resetButton}
           onClick={() => {
+            forceReload();
+          }}
+        >
+          <img src={"/assets/icons/redo-2.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
+        </div>
+        <div
+          style={styles.resetButton}
+          onClick={async () => {
+            await clear();
             forceReload();
           }}
         >
