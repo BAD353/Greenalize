@@ -1,3 +1,5 @@
+/// <reference lib="webworker" />
+export {};
 self.onmessage = (e: MessageEvent) => {
   const { parks, mapSize, coordGrid, coordStep, bounds, heatmapExtraFactor } = e.data;
 

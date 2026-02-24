@@ -199,11 +199,21 @@ const Map = forwardRef<MapHandle, MapProps>(
 
   // ─── Heatmap worker ───────────────────────────────────────────────────────────
 
-  function spawnHeatmapWorker(payload: object & {
-    coordStep: number;
-    bounds: { north: number; south: number; east: number; west: number };
-    coordGrid: { lat: number; lng: number }[][];
-  }) {
+interface HeatmapWorkerPayload {
+  parks: {
+    outerRings: [number, number][][];
+    area: number;
+    boundingBox: [number, number, number, number];
+    id: string | number;
+  }[];
+  mapSize: { x: number; y: number };
+  coordGrid: { lat: number; lng: number }[][];
+  coordStep: number;
+  bounds: { north: number; south: number; east: number; west: number };
+  heatmapExtraFactor: number;
+}
+
+  function spawnHeatmapWorker(payload: HeatmapWorkerPayload) {
     if (workerRef.current) {
       workerRef.current.terminate();
       workerRef.current = null;
