@@ -1,7 +1,7 @@
 import { useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { getBoundedParkData, updateParkData } from "../../backend/mapData/mapData";
+import { getBoundedParkData, updateParkData, getAvailableTags, getParkData } from "../../backend/mapData/mapData";
 import type { Feature, FeatureCollection, MultiPolygon } from "geojson";
 import getParkColorByArea from "../../utils/parkColor";
 import type { DeletedPark } from "../../backend/mapData/deletedParks";
@@ -23,31 +23,49 @@ type MapProps = {
   showParks: boolean;
   onDeletePark: (park: DeletedPark) => void;
   refreshKey: number;
+  activeTags: string[];
+  onTagsAvailable: (tags: string[]) => void;
 };
+
+// Stores the last computed score grid so map clicks can sample it
+interface ScoreGridSnapshot {
+  grid: Float32Array;
+  gridWidth: number;
+  gridHeight: number;
+  bounds: { north: number; south: number; east: number; west: number };
+  coordStep: number;
+}
 
 const Map = forwardRef<MapHandle, MapProps>(
   function Map(
-    { showHeatmap, showParks, onDeletePark, refreshKey },
+    { showHeatmap, showParks, onDeletePark, refreshKey, activeTags, onTagsAvailable },
     ref
   ) {
   const mapRef = useRef<L.Map | null>(null);
   const parksLayerRef = useRef<L.GeoJSON | null>(null);
   const heatmapOverlayRef = useRef<L.ImageOverlay | null>(null);
-
-  // Worker ref is replaced on every heatmap request to discard stale computations
   const workerRef = useRef<Worker | null>(null);
   const lastMoveRef = useRef<number>(performance.now());
 
-  // Mirror props into refs so all callbacks always read current values without stale closures
+  // Holds the latest score grid for click sampling
+  const scoreGridSnapshotRef = useRef<ScoreGridSnapshot | null>(null);
+  // Holds the greenness popup so we can close/replace it
+  const greenPopupRef = useRef<L.Popup | null>(null);
+
   const showParksRef = useRef(showParks);
   const showHeatmapRef = useRef(showHeatmap);
   useEffect(() => { showParksRef.current = showParks; }, [showParks]);
   useEffect(() => { showHeatmapRef.current = showHeatmap; }, [showHeatmap]);
 
+  const activeTagsRef = useRef(activeTags);
+  useEffect(() => { activeTagsRef.current = activeTags; }, [activeTags]);
+
   const onDeleteParkRef = useRef(onDeletePark);
   useEffect(() => { onDeleteParkRef.current = onDeletePark; }, [onDeletePark]);
 
-  // Reassigned every render so the handle and the refreshKey effect always get the fresh closure
+  const onTagsAvailableRef = useRef(onTagsAvailable);
+  useEffect(() => { onTagsAvailableRef.current = onTagsAvailable; }, [onTagsAvailable]);
+
   const redrawParksRef = useRef<() => void>(() => {});
 
   useImperativeHandle(ref, () => ({
@@ -75,6 +93,31 @@ const Map = forwardRef<MapHandle, MapProps>(
       updateWhenIdle: false,
     }).addTo(mapRef.current);
 
+    // Click handler — sample the score grid and show a greenness popup
+    mapRef.current.on("click", (e: L.LeafletMouseEvent) => {
+      if (!showHeatmapRef.current) return;
+      const snap = scoreGridSnapshotRef.current;
+      if (!snap) return;
+
+      const { lat, lng } = e.latlng;
+      const score = sampleScoreGrid(snap, lat, lng);
+      const MAX_SCORE = 1e2;
+      const ratio = Math.pow(Math.min(score / MAX_SCORE, 1), 0.5);
+      const pct = Math.round(ratio * 100);
+
+      // Pick a label based on the score
+      const label = `${score}`;
+
+      if (greenPopupRef.current) {
+        mapRef.current?.closePopup(greenPopupRef.current);
+      }
+
+      greenPopupRef.current = L.popup({ className: "greenness-popup" })
+        .setLatLng(e.latlng)
+        .setContent(buildGreennessPopup(pct, label))
+        .openOn(mapRef.current!);
+    });
+
     fetchAndLoad();
 
     mapRef.current.on("moveend", () => {
@@ -93,16 +136,74 @@ const Map = forwardRef<MapHandle, MapProps>(
     };
   }, [showParks, showHeatmap]);
 
-  // Triggered by parent incrementing refreshKey on delete or restore
   useEffect(() => {
     if (!mapRef.current) return;
     redrawParksRef.current();
-  }, [refreshKey]);
+  }, [refreshKey, activeTags]);
+
+  // ─── Score grid sampling ──────────────────────────────────────────────────────
+
+  function sampleScoreGrid(snap: ScoreGridSnapshot, lat: number, lng: number): number {
+    const { grid, gridWidth, gridHeight, bounds, coordStep } = snap;
+    const getGrid = (x: number, y: number) => grid[y * (gridWidth + 1) + x];
+
+    const gy  = (bounds.north - lat) / coordStep;
+    const gy1 = Math.floor(Math.max(0, Math.min(gridHeight - 1, gy)));
+    const gy2 = Math.min(gridHeight, gy1 + 1);
+    const dy  = gy - gy1;
+
+    const gx  = (lng - bounds.west) / coordStep;
+    const gx1 = Math.floor(Math.max(0, Math.min(gridWidth - 1, gx)));
+    const gx2 = Math.min(gridWidth, gx1 + 1);
+    const dx  = gx - gx1;
+
+    return (
+      (getGrid(gx1, gy1) * (1 - dx) + getGrid(gx2, gy1) * dx) * (1 - dy) +
+      (getGrid(gx1, gy2) * (1 - dx) + getGrid(gx2, gy2) * dx) * dy
+    );
+  }
+
+  // ─── Greenness popup content ──────────────────────────────────────────────────
+
+  function buildGreennessPopup(pct: number, label: string): HTMLDivElement {
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex; flex-direction:column; gap:6px; min-width:140px;";
+
+    const title = document.createElement("span");
+    title.style.cssText = "font-weight:bold; font-size:0.95rem;";
+    title.textContent = label;
+
+    const barOuter = document.createElement("div");
+    barOuter.style.cssText = `
+      width: 100%; height: 8px; border-radius: 999px;
+      background: #e0e0e0; overflow: hidden;
+    `;
+    const barInner = document.createElement("div");
+    // Interpolate bar color from red → yellow → green
+    const hue = Math.round(pct * 1.2); // 0→red, 120→green
+    barInner.style.cssText = `
+      width: ${pct}%; height: 100%; border-radius: 999px;
+      background: hsl(${hue}, 80%, 45%); transition: width 0.3s;
+    `;
+    barOuter.appendChild(barInner);
+
+    const scoreLine = document.createElement("span");
+    scoreLine.style.cssText = "font-size:0.8rem; color:#666;";
+    scoreLine.textContent = `Greenness: ${pct}%`;
+
+    container.appendChild(title);
+    container.appendChild(barOuter);
+    container.appendChild(scoreLine);
+    return container;
+  }
 
   // ─── Heatmap worker ───────────────────────────────────────────────────────────
 
-  function spawnHeatmapWorker(payload: object) {
-    // Kill the previous worker so its queued/running computation is discarded
+  function spawnHeatmapWorker(payload: object & {
+    coordStep: number;
+    bounds: { north: number; south: number; east: number; west: number };
+    coordGrid: { lat: number; lng: number }[][];
+  }) {
     if (workerRef.current) {
       workerRef.current.terminate();
       workerRef.current = null;
@@ -113,7 +214,16 @@ const Map = forwardRef<MapHandle, MapProps>(
 
     worker.onmessage = (e: MessageEvent) => {
       if (!mapRef.current) return;
-      const { imageDataArray, width, height, bounds } = e.data;
+      const { imageDataArray, width, height, bounds, scoreGrid, gridWidth, gridHeight, coordStep } = e.data;
+
+      // Store snapshot for click sampling
+      scoreGridSnapshotRef.current = {
+        grid: new Float32Array(scoreGrid),
+        gridWidth,
+        gridHeight,
+        bounds: payload.bounds,
+        coordStep: payload.coordStep,
+      };
 
       const canvas = document.createElement("canvas");
       canvas.width = width;
@@ -190,14 +300,11 @@ const Map = forwardRef<MapHandle, MapProps>(
 
   // ─── GeoJSON conversion ───────────────────────────────────────────────────────
 
-  // Convert a Park to a GeoJSON MultiPolygon feature.
-  // Internal coords are [lat, lon]; GeoJSON expects [lon, lat].
   function parkToFeature(park: Park): Feature<MultiPolygon, any> {
     return {
       type: "Feature",
       geometry: {
         type: "MultiPolygon",
-        // polygons[i][j] is a ring of [lat, lon] pairs — flip to [lon, lat] for GeoJSON
         coordinates: park.polygons.map((polygon) =>
           polygon.map((ring) => ring.map(([lat, lon]) => [lon, lat]))
         ),
@@ -256,7 +363,6 @@ const Map = forwardRef<MapHandle, MapProps>(
       const mapSize = mapRef.current.getSize();
       const zoom = mapRef.current.getZoom();
 
-      // Coarser grid at low zoom for performance, finer grid when zoomed in
       const coordStep =
         zoom <= 13 ? 0.005 :
         zoom === 14 ? 0.002 :
@@ -272,11 +378,12 @@ const Map = forwardRef<MapHandle, MapProps>(
         }))
       );
 
-      // Send all outer rings of all polygons — the worker scores against every ring
       spawnHeatmapWorker({
-        parks: parks.map((p) => ({
+        parks: getParkData().map((p) => ({
           outerRings: p.polygons.map((poly) => poly[0]),
           area: p.area,
+          boundingBox: p.boundingBox,
+          id: p.id,
         })),
         mapSize: { x: mapSize.x, y: mapSize.y },
         coordGrid, coordStep,
@@ -288,6 +395,7 @@ const Map = forwardRef<MapHandle, MapProps>(
       workerRef.current = null;
       mapRef.current.removeLayer(heatmapOverlayRef.current);
       heatmapOverlayRef.current = null;
+      scoreGridSnapshotRef.current = null;
     }
   }
 
@@ -296,20 +404,19 @@ const Map = forwardRef<MapHandle, MapProps>(
   function redrawParks() {
     if (!mapRef.current) return;
     const bounds = getExpandedBounds();
-    const parks = getBoundedParkData(bounds.north, bounds.east, bounds.south, bounds.west);
+    const parks = getBoundedParkData(bounds.north, bounds.east, bounds.south, bounds.west, activeTagsRef.current);
     paintLayers(parks, bounds);
   }
 
-  // Keep ref current every render so stale-closure issues are impossible
   redrawParksRef.current = redrawParks;
 
-  // Full load: fetches missing tiles then repaints — used on init and moveend
   async function fetchAndLoad() {
     if (!mapRef.current) return;
     const bounds = getExpandedBounds();
     try {
       await updateParkData([bounds.north, bounds.east, bounds.south, bounds.west]);
-      const parks = getBoundedParkData(bounds.north, bounds.east, bounds.south, bounds.west);
+      onTagsAvailableRef.current(getAvailableTags());
+      const parks = getBoundedParkData(bounds.north, bounds.east, bounds.south, bounds.west, activeTagsRef.current);
       paintLayers(parks, bounds);
     } catch (error) {
       console.error("Error loading parks:", error);

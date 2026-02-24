@@ -108,6 +108,72 @@ const DeletedParkRow = ({
   );
 };
 
+// ─── Tag Filter Panel ─────────────────────────────────────────────────────────
+
+const TagFilterPanel = ({
+  availableTags,
+  selectedTags,
+  onTagsChanged,
+}: {
+  availableTags: string[];
+  selectedTags: string[];
+  onTagsChanged: (tags: string[]) => void;
+}) => {
+  if (availableTags.length === 0) {
+    return (
+      <div style={styles.tagFilterSection}>
+        <span style={{ color: "var(--text-disabled)", fontSize: "0.85rem" }}>
+          No tags found yet
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.tagFilterSection}>
+      <div style={styles.tagFilterHeader}>
+        <span style={styles.tagFilterLabel}>Filter by tag</span>
+        {selectedTags.length > 0 && (
+          <button
+            style={styles.tagClearButton}
+            onClick={() => onTagsChanged([])}
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+      {availableTags.map((tag) => {
+        const checked = selectedTags.includes(tag);
+        return (
+          <label key={tag} style={styles.tagCheckRow}>
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() => {
+                const next = checked
+                  ? selectedTags.filter((t) => t !== tag)
+                  : [...selectedTags, tag];
+                onTagsChanged(next);
+              }}
+              style={styles.tagCheckbox}
+            />
+            <span
+              style={{
+                ...styles.tagChipInline,
+                background: checked ? "var(--green-background)" : "transparent",
+                color: checked ? "var(--green)" : "var(--text-disabled)",
+                border: `1.5px solid ${checked ? "var(--green)" : "var(--text-disabled)"}`,
+              }}
+            >
+              {tag}
+            </span>
+          </label>
+        );
+      })}
+    </div>
+  );
+};
+
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 type Tab = "filters" | "deleted";
@@ -121,6 +187,9 @@ const Sidebar = ({
   deletedParks,
   onRestorePark,
   onClearDeleted,
+  availableTags,
+  selectedTags,
+  onTagsChanged,
 }: {
   onClose: Function;
   showParks: boolean;
@@ -130,6 +199,9 @@ const Sidebar = ({
   deletedParks: DeletedPark[];
   onRestorePark: (id: number) => void;
   onClearDeleted: () => void;
+  availableTags: string[];
+  selectedTags: string[];
+  onTagsChanged: (tags: string[]) => void;
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("filters");
   const [parksEnabled, setParksEnabled] = useState(showParks);
@@ -189,7 +261,11 @@ const Sidebar = ({
             onExpanded={() => setIsParksDropdownOpen((prev) => !prev)}
           />
           {isParksDropdownOpen && (
-            <div style={styles.dropdownPlaceholder}>what are you looking for? :D</div>
+            <TagFilterPanel
+              availableTags={availableTags}
+              selectedTags={selectedTags}
+              onTagsChanged={onTagsChanged}
+            />
           )}
 
           <ToggleButton
@@ -214,6 +290,7 @@ const Sidebar = ({
               onSetParks(true);
               setHeatmapEnabled(true);
               onSetHeatmap(true);
+              onTagsChanged([]);
               onClearDeleted();
             }}
           >
@@ -391,7 +468,6 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: "ellipsis",
     whiteSpace: "nowrap",
   },
-  // Darker than before - using text-normal at reduced opacity rather than text-disabled
   deletedItemMeta: {
     fontSize: "0.78rem",
     color: "var(--text-normal)",
@@ -466,6 +542,57 @@ const styles: Record<string, React.CSSProperties> = {
     transition: "all 0.2s ease",
     color: "var(--red)",
     background: "var(--red-background)",
+  },
+
+  // Tag filter panel
+  tagFilterSection: {
+    paddingLeft: "0.75rem",
+    paddingBottom: "0.5rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.4rem",
+  },
+  tagFilterHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: "0.1rem",
+  },
+  tagFilterLabel: {
+    fontSize: "0.75rem",
+    fontWeight: "700",
+    letterSpacing: "0.07em",
+    textTransform: "uppercase" as const,
+    color: "var(--text-normal)",
+  },
+  tagClearButton: {
+    background: "none",
+    border: "none",
+    color: "var(--text-disabled)",
+    fontSize: "0.75rem",
+    cursor: "pointer",
+    padding: "0 2px",
+    textDecoration: "underline",
+  },
+  tagCheckRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    cursor: "pointer",
+  },
+  tagCheckbox: {
+    accentColor: "var(--green)",
+    width: "1rem",
+    height: "1rem",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  tagChipInline: {
+    borderRadius: "999px",
+    fontSize: "0.78rem",
+    fontWeight: "600",
+    padding: "2px 10px",
+    transition: "all 0.15s ease",
   },
 };
 

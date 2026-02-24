@@ -35,7 +35,6 @@ function isContainedIn(inner: Park, outer: Park): boolean {
   if (!outerPoly) return false;
 
   const ring = inner.polygons[0][0];
-  // Sample up to 12 points evenly
   const step = Math.max(1, Math.floor(ring.length / 12));
 
   for (let i = 0; i < ring.length; i += step) {
@@ -73,32 +72,20 @@ function bboxesOverlap(
   return !(a[1] < b[3] || a[3] > b[1] || a[0] < b[2] || a[2] > b[0]);
 }
 
-/**
- * Try to merge two parks.
- * Rules:
- *  - Both have names → no merge
- *  - Name of merged result = whichever park has a name (or undefined)
- *  - One must be fully contained in the other (by bbox first, then point-in-polygon)
- *  - Result shape = the bigger park's shape
- */
 function tryMerge(a: Park, b: Park): Park | undefined {
   if (!bboxesOverlap(a.boundingBox, b.boundingBox)) return undefined;
 
   const aArea = bboxArea(a.boundingBox);
   const bArea = bboxArea(b.boundingBox);
 
-  // Determine candidate outer/inner by bbox area
   const [bigger, smaller] = aArea >= bArea ? [a, b] : [b, a];
 
-  // Fast bbox containment check first
   if (!bboxContains(bigger.boundingBox, smaller.boundingBox)) return undefined;
 
-  // Precise containment check: all sampled points of smaller inside bigger
   if (!isContainedIn(smaller, bigger)) return undefined;
 
   const mergedName = aArea >= bArea ? a.name : b.name;
 
-  // Result = bigger park's geometry, with merged name
   return {
     ...bigger,
     name: mergedName,
@@ -131,19 +118,16 @@ self.onmessage = async (event) => {
   const sortedParks = [...parks].sort((a, b) => a.boundingBox[3] - b.boundingBox[3]);
 
   const merged: Park[] = [];
-  const absorbed = new Set<Park>();
-
+  const absorbed = new Array<boolean>(sortedParks.length).fill(false);
   for (let i = 0; i < sortedParks.length; i++) {
-    if (absorbed.has(sortedParks[i])) continue;
-
+    if (absorbed[i]) continue;
     let current = sortedParks[i];
     let currentWasAbsorbed = false;
 
     for (let j = i + 1; j < sortedParks.length; j++) {
+      if (absorbed[j]) continue;
       const candidate = sortedParks[j];
-      if (absorbed.has(candidate)) continue;
-
-      // stop if we have passed the east edge
+      // stop if we have passed the east edge of the current park
       if (candidate.boundingBox[3] > current.boundingBox[1]) break;
 
       const mergeResult = tryMerge(current, candidate);
@@ -151,11 +135,11 @@ self.onmessage = async (event) => {
         const currentArea = bboxArea(current.boundingBox);
         const candidateArea = bboxArea(candidate.boundingBox);
         if (currentArea >= candidateArea) {
-          absorbed.add(candidate);
+          absorbed[j] = true;
           current = mergeResult;
         } else {
-          absorbed.add(sortedParks[i]);
-          absorbed.add(candidate);
+          absorbed[i] = true;
+          absorbed[j] = true;
           current = mergeResult;
           currentWasAbsorbed = true;
         }

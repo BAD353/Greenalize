@@ -52,20 +52,23 @@ export default function HomePage() {
   const [isMenuOpen, toggleMenu] = useState(false);
   const [deletedParks, setDeletedParks] = useState<DeletedPark[]>([]);
 
-  const mapRef = useRef<MapHandle>(null);
+  // Tag filter state — availableTags is populated by Map after each data load
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
+  const mapRef = useRef<MapHandle>(null);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
 
   const handleDeletePark = async (park) => {
     await deletePark(park);
     setDeletedParks(getDeletedParks());
     setMapRefreshKey((k) => k + 1);
-  }
+  };
 
   const handleRestorePark = async (id) => {
     await restorePark(id);
     setDeletedParks(getDeletedParks());
-    setMapRefreshKey((k) => k + 1); // same
+    setMapRefreshKey((k) => k + 1);
   };
 
   const handleClearDeleted = async () => {
@@ -78,6 +81,7 @@ export default function HomePage() {
   useEffect(() => {
     loadDeletedParks().then(() => setDeletedParks(getDeletedParks()));
   }, []);
+
   return (
     <div style={styles.page}>
       <Suspense fallback={<div>Loading map...</div>}>
@@ -86,6 +90,8 @@ export default function HomePage() {
           showParks={isParkLayerEnabled}
           onDeletePark={handleDeletePark}
           refreshKey={mapRefreshKey}
+          activeTags={selectedTags}
+          onTagsAvailable={setAvailableTags}
         />
       </Suspense>
 
@@ -125,11 +131,10 @@ export default function HomePage() {
           activeLink={"/assets/icons/map-active.svg"}
         />
       </div>
+
       {isMenuOpen ? (
         <Sidebar
-          onClose={() => {
-            toggleMenu(false);
-          }}
+          onClose={() => toggleMenu(false)}
           showParks={isParkLayerEnabled}
           showHeatmap={isHeatmapLayerEnabled}
           onSetParks={(value) => setParkLayer(value)}
@@ -137,13 +142,14 @@ export default function HomePage() {
           deletedParks={deletedParks}
           onRestorePark={handleRestorePark}
           onClearDeleted={handleClearDeleted}
+          availableTags={availableTags}
+          selectedTags={selectedTags}
+          onTagsChanged={setSelectedTags}
         />
       ) : (
         <div
           style={styles.menuButtonContainer}
-          onClick={() => {
-            toggleMenu(true);
-          }}
+          onClick={() => toggleMenu(true)}
         >
           <img src={"/assets/icons/menu.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
         </div>
