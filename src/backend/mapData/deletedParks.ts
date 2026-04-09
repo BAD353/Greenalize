@@ -7,14 +7,12 @@ export interface DeletedPark {
   tags: string[];
 }
 
-// In-memory map for fast O(1) lookup during filtering
 let deletedParkIds: Map<number, DeletedPark> = new Map();
 
 export async function loadDeletedParks() {
   const cached = await get("deleted_parks");
   if (cached) {
     deletedParkIds = new Map(cached);
-    console.log("Loaded deleted parks from IndexedDB:", deletedParkIds.size);
   }
 }
 

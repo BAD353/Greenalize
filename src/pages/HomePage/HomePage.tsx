@@ -11,7 +11,8 @@ import {
   clearDeletedParks,
 } from "../../backend/mapData/deletedParks";
 import type { MapHandle } from "../../components/Map/Map";
-import { clear } from "idb-keyval";
+import { DEFAULT_HEATMAP_PARAMS } from "../../components/Map/Map";
+import type { HeatmapParams } from "../../components/Map/Map";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -55,6 +56,7 @@ export default function HomePage() {
   // Tag filter state — availableTags is populated by Map after each data load
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [heatmapParams, setHeatmapParams] = useState<HeatmapParams>(DEFAULT_HEATMAP_PARAMS);
 
   const mapRef = useRef<MapHandle>(null);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
@@ -86,47 +88,49 @@ export default function HomePage() {
     <div style={styles.page}>
       <Suspense fallback={<div>Loading map...</div>}>
         <Map
+          ref={mapRef}
           showHeatmap={isHeatmapLayerEnabled}
           showParks={isParkLayerEnabled}
           onDeletePark={handleDeletePark}
           refreshKey={mapRefreshKey}
           activeTags={selectedTags}
           onTagsAvailable={setAvailableTags}
+          heatmapParams={heatmapParams}
         />
       </Suspense>
 
       <div style={styles.buttons}>
+        {/* Soft reload — refetches data without clearing the cache */}
         <div
           style={styles.resetButton}
-          onClick={() => {
-            forceReload();
-          }}
+          onClick={() => forceReload()}
+          title="Reload data"
         >
           <img src={"/assets/icons/redo-2.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
         </div>
+
+        {/* Export heatmap as PNG — only active when heatmap layer is on */}
         <div
-          style={styles.resetButton}
-          onClick={async () => {
-            await clear();
-            forceReload();
+          style={{
+            ...styles.resetButton,
+            opacity: isHeatmapLayerEnabled ? 1 : 0.35,
+            cursor: isHeatmapLayerEnabled ? "pointer" : "not-allowed",
           }}
+          onClick={() => isHeatmapLayerEnabled && mapRef.current?.exportPng()}
+          title="Export heatmap as PNG"
         >
-          <img src={"/assets/icons/redo.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
+          <img src={"/assets/icons/download.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
         </div>
 
         <LayerButton
           isEnabled={isParkLayerEnabled}
-          toggle={(newState: boolean) => {
-            setParkLayer(newState);
-          }}
+          toggle={(newState: boolean) => setParkLayer(newState)}
           normalLink={"/assets/icons/park-normal.svg"}
           activeLink={"/assets/icons/park-active.svg"}
         />
         <LayerButton
           isEnabled={isHeatmapLayerEnabled}
-          toggle={(newState: boolean) => {
-            setHeatmapLayer(newState);
-          }}
+          toggle={(newState: boolean) => setHeatmapLayer(newState)}
           normalLink={"/assets/icons/map-normal.svg"}
           activeLink={"/assets/icons/map-active.svg"}
         />
@@ -145,6 +149,8 @@ export default function HomePage() {
           availableTags={availableTags}
           selectedTags={selectedTags}
           onTagsChanged={setSelectedTags}
+          heatmapParams={heatmapParams}
+          onHeatmapParamsChanged={setHeatmapParams}
         />
       ) : (
         <div

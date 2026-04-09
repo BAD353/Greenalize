@@ -55,7 +55,6 @@ export async function loadMergedParks() {
     const cached = await get("merged_parks");
     if (cached && cached.length > 0) {
       parkData = cached;
-      console.log("Loaded merged parks from IndexedDB:", parkData.length);
     }
   })();
   await initPromise;
@@ -248,5 +247,9 @@ export async function updateParkData(bbox: [number, number, number, number]) {
         tasks.push(updateTile(latID * TILE_STEP, lonID * TILE_STEP, key));
       }
     }
+  }
+
+  if (tasks.length > 0) {
+    await Promise.all(tasks);
   }
 }

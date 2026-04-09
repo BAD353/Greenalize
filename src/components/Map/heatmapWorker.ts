@@ -1,7 +1,12 @@
 /// <reference lib="webworker" />
 export {};
 self.onmessage = (e: MessageEvent) => {
-  const { parks, mapSize, coordGrid, coordStep, bounds, heatmapExtraFactor } = e.data;
+  const {
+    parks, mapSize, coordGrid, coordStep, bounds, heatmapExtraFactor,
+    areaPow, sigma, maxScore,
+  } = e.data;
+
+  const MAX_SCORE = maxScore;
 
   const scale = 1 + 2 * heatmapExtraFactor;
   const outWidth  = Math.round(mapSize.x * scale);
@@ -22,11 +27,8 @@ self.onmessage = (e: MessageEvent) => {
 
   const minDist    = 0;
   const maxDist    = 0.1;
-  const areaPow    = 0.5;
   const minArea    = 1000;
   const maxArea    = 100000;
-  const MAX_SCORE  = 1e2;
-  const sigma = 0.005;
 
   const gridSize = (gridWidth + 1) * (gridHeight + 1);
   const gridLat = new Float64Array(gridSize);
@@ -58,7 +60,7 @@ self.onmessage = (e: MessageEvent) => {
     const viewLngDist = Math.max(0, Math.max(pWest  - gridEast,  gridWest  - pEast));
     if (viewLatDist**2 + viewLngDist**2 > maxDist ** 2) continue;
 
-    const scaledArea = Math.pow(Math.min(park.area, maxArea)/ minArea, areaPow);
+    const scaledArea = Math.pow(Math.min(park.area, maxArea) / minArea, areaPow);
 
     let segCount = 0;
     for (const ring of park.outerRings) segCount += ring.length;
@@ -133,17 +135,16 @@ self.onmessage = (e: MessageEvent) => {
     }
   }
 
-  // In heatmapWorker.ts — replace the final postMessage with:
-self.postMessage({
-  imageDataArray,
-  width: outWidth,
-  height: outHeight,
-  bounds: expandedBounds,
-  scoreGrid: scoreGrid.buffer,   // transfer the raw buffer — no copy
-  gridWidth,
-  gridHeight,
-  coordStep,
-}, [scoreGrid.buffer, imageDataArray.buffer]); // transfer both buffers
+  self.postMessage({
+    imageDataArray,
+    width: outWidth,
+    height: outHeight,
+    bounds: expandedBounds,
+    scoreGrid: scoreGrid.buffer,
+    gridWidth,
+    gridHeight,
+    coordStep,
+  }, [scoreGrid.buffer, imageDataArray.buffer]);
 };
 
 function pointToSegmentDistance(

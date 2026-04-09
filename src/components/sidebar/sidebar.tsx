@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import SettingsSVG from "../dynamicSVGs/settingsSVG";
 import CloseSVG from "../dynamicSVGs/closeSVG";
 import type { DeletedPark } from "../../backend/mapData/deletedParks";
+import type { HeatmapParams } from "../Map/Map";
+import { DEFAULT_HEATMAP_PARAMS } from "../Map/Map";
 
 // ─── Toggle Button ────────────────────────────────────────────────────────────
 
@@ -64,6 +66,88 @@ const ToggleButton = ({
     </div>
   );
 };
+
+// ─── Slider Row ───────────────────────────────────────────────────────────────
+
+const SliderRow = ({
+  label,
+  hint,
+  value,
+  min,
+  max,
+  step,
+  display,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  display: (v: number) => string;
+  onChange: (v: number) => void;
+}) => (
+  <div style={styles.sliderRow}>
+    <div style={styles.sliderHeader}>
+      <span style={styles.sliderLabel}>{label}</span>
+      <span style={styles.sliderValue}>{display(value)}</span>
+    </div>
+    <input
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(parseFloat(e.target.value))}
+      style={styles.slider}
+    />
+    <span style={styles.sliderHint}>{hint}</span>
+  </div>
+);
+
+// ─── Heatmap Options Panel ────────────────────────────────────────────────────
+
+const HeatmapOptionsPanel = ({
+  params = DEFAULT_HEATMAP_PARAMS,
+  onChanged,
+}: {
+  params?: HeatmapParams;
+  onChanged: (p: HeatmapParams) => void;
+}) => (
+  <div style={styles.heatmapPanel}>
+    <SliderRow
+      label="Spread"
+      hint="How far the green glow radiates from each park"
+      value={params.sigma}
+      min={0.001}
+      max={0.02}
+      step={0.001}
+      display={(v) => `${Math.round(v * 1000)}m radius`}
+      onChange={(v) => onChanged({ ...params, sigma: v })}
+    />
+    <SliderRow
+      label="Size influence"
+      hint="How much a park's area boosts its score"
+      value={params.areaPow}
+      min={0.1}
+      max={1.0}
+      step={0.05}
+      display={(v) => v === 1 ? "linear" : v <= 0.2 ? "minimal" : v <= 0.5 ? "moderate" : "strong"}
+      onChange={(v) => onChanged({ ...params, areaPow: v })}
+    />
+    <SliderRow
+      label="Colour saturation"
+      hint="Score at which the map turns fully green"
+      value={params.maxScore}
+      min={10}
+      max={500}
+      step={10}
+      display={(v) => `${v}`}
+      onChange={(v) => onChanged({ ...params, maxScore: v })}
+    />
+  </div>
+);
 
 // ─── Tag Chip ─────────────────────────────────────────────────────────────────
 
@@ -190,6 +274,8 @@ const Sidebar = ({
   availableTags,
   selectedTags,
   onTagsChanged,
+  heatmapParams = DEFAULT_HEATMAP_PARAMS,
+  onHeatmapParamsChanged,
 }: {
   onClose: Function;
   showParks: boolean;
@@ -202,6 +288,8 @@ const Sidebar = ({
   availableTags: string[];
   selectedTags: string[];
   onTagsChanged: (tags: string[]) => void;
+  heatmapParams?: HeatmapParams;
+  onHeatmapParamsChanged: (p: HeatmapParams) => void;
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("filters");
   const [parksEnabled, setParksEnabled] = useState(showParks);
@@ -276,7 +364,10 @@ const Sidebar = ({
             onExpanded={() => setIsHeatmapDropdownOpen((prev) => !prev)}
           />
           {isHeatmapDropdownOpen && (
-            <div style={styles.dropdownPlaceholder}>nothing's here, come back later</div>
+            <HeatmapOptionsPanel
+              params={heatmapParams}
+              onChanged={onHeatmapParamsChanged}
+            />
           )}
 
           <div style={{ flex: 1 }} />
@@ -292,6 +383,7 @@ const Sidebar = ({
               onSetHeatmap(true);
               onTagsChanged([]);
               onClearDeleted();
+              onHeatmapParamsChanged(DEFAULT_HEATMAP_PARAMS);
             }}
           >
             Reset Default
@@ -312,7 +404,6 @@ const Sidebar = ({
                     park={park}
                     onRestore={() => onRestorePark(park.id)}
                   />
-                  {/* Divider between rows, not after the last one */}
                   {i < deletedParks.length - 1 && <div style={styles.rowDivider} />}
                 </React.Fragment>
               ))}
@@ -422,16 +513,51 @@ const styles: Record<string, React.CSSProperties> = {
     color: "var(--text-normal)",
     margin: "0 0 0.25rem 0",
   },
-  dropdownPlaceholder: {
-    color: "var(--text-disabled)",
-    paddingLeft: "20px",
-    fontSize: "15px",
-  },
   emptyState: {
     color: "var(--text-disabled)",
     fontSize: "0.9rem",
     textAlign: "center",
     marginTop: "2rem",
+  },
+
+  // Heatmap options panel
+  heatmapPanel: {
+    paddingLeft: "0.75rem",
+    paddingBottom: "0.5rem",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+  },
+  sliderRow: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "3px",
+  },
+  sliderHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "baseline",
+  },
+  sliderLabel: {
+    fontSize: "0.85rem",
+    fontWeight: "600",
+    color: "var(--text-normal)",
+  },
+  sliderValue: {
+    fontSize: "0.78rem",
+    fontWeight: "600",
+    color: "var(--green)",
+    minWidth: "6rem",
+    textAlign: "right",
+  },
+  slider: {
+    width: "100%",
+    accentColor: "var(--green)",
+    cursor: "pointer",
+  },
+  sliderHint: {
+    fontSize: "0.72rem",
+    color: "var(--text-disabled)",
   },
 
   // Deleted parks list
