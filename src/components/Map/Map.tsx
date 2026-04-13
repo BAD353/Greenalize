@@ -42,9 +42,9 @@ type MapProps = {
   activeTags: string[];
   onTagsAvailable: (tags: string[]) => void;
   heatmapParams?: HeatmapParams;
+  onLoading?: (loading: boolean) => void;
 };
 
-// Stores the last computed score grid so map clicks can sample it
 interface ScoreGridSnapshot {
   grid: Float32Array;
   gridWidth: number;
@@ -55,7 +55,7 @@ interface ScoreGridSnapshot {
 
 const Map = forwardRef<MapHandle, MapProps>(
   function Map(
-    { showHeatmap, showParks, onDeletePark, refreshKey, activeTags, onTagsAvailable, heatmapParams },
+    { showHeatmap, showParks, onDeletePark, refreshKey, activeTags, onTagsAvailable, heatmapParams, onLoading },
     ref
   ) {
   const mapRef = useRef<L.Map | null>(null);
@@ -64,20 +64,24 @@ const Map = forwardRef<MapHandle, MapProps>(
   const workerRef = useRef<Worker | null>(null);
   const lastMoveRef = useRef<number>(performance.now());
 
-  // Holds the latest score grid for click sampling
   const scoreGridSnapshotRef = useRef<ScoreGridSnapshot | null>(null);
-  // Holds the greenness popup so we can close/replace it
   const greenPopupRef = useRef<L.Popup | null>(null);
-  // Monotonically increasing counter — each new heatmap request bumps this,
-  // and the worker callback checks it matches before swapping the overlay.
   const heatmapGenRef = useRef<number>(0);
-  // Holds the latest rendered heatmap data URL so it can be exported as PNG.
   const heatmapDataUrlRef = useRef<string | null>(null);
 
+  // Keep refs in sync so callbacks always read the latest values
+  // without triggering map re-initialisation.
   const showParksRef = useRef(showParks);
   const showHeatmapRef = useRef(showHeatmap);
-  useEffect(() => { showParksRef.current = showParks; }, [showParks]);
-  useEffect(() => { showHeatmapRef.current = showHeatmap; }, [showHeatmap]);
+  useEffect(() => {
+    showParksRef.current = showParks;
+    // Redraw whenever a layer is toggled — do NOT re-init the map.
+    if (mapRef.current) redrawParksRef.current();
+  }, [showParks]);
+  useEffect(() => {
+    showHeatmapRef.current = showHeatmap;
+    if (mapRef.current) redrawParksRef.current();
+  }, [showHeatmap]);
 
   const activeTagsRef = useRef(activeTags);
   useEffect(() => { activeTagsRef.current = activeTags; }, [activeTags]);
@@ -91,7 +95,26 @@ const Map = forwardRef<MapHandle, MapProps>(
   const onTagsAvailableRef = useRef(onTagsAvailable);
   useEffect(() => { onTagsAvailableRef.current = onTagsAvailable; }, [onTagsAvailable]);
 
+  const onLoadingRef = useRef(onLoading);
+  useEffect(() => { onLoadingRef.current = onLoading; }, [onLoading]);
+
   const redrawParksRef = useRef<() => void>(() => {});
+
+  // ─── URL sync helper ────────────────────────────────────────────────────────
+
+  function syncUrlToMap() {
+    if (!mapRef.current) return;
+    const center = mapRef.current.getCenter();
+    const zoom = mapRef.current.getZoom();
+    const params = new URLSearchParams(window.location.search);
+    params.set("lat", center.lat.toFixed(5));
+    params.set("lng", center.lng.toFixed(5));
+    params.set("zoom", String(zoom));
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState(null, "", newUrl);
+  }
+
+  // ─── PNG export ─────────────────────────────────────────────────────────────
 
   async function exportMapPng() {
     if (!mapRef.current) return;
@@ -105,7 +128,6 @@ const Map = forwardRef<MapHandle, MapProps>(
     out.height = Math.round(height);
     const ctx = out.getContext("2d")!;
 
-    // ── 1. Tile layer — re-fetch visible tiles with crossOrigin to avoid canvas taint ──
     const tilePane = mapEl.querySelector(".leaflet-tile-pane") as HTMLElement | null;
     if (tilePane) {
       const mapRect = mapEl.getBoundingClientRect();
@@ -121,19 +143,15 @@ const Map = forwardRef<MapHandle, MapProps>(
           resolve();
         };
         img.onerror = () => resolve();
-        // Cache-bust so the browser re-requests with the CORS header
         img.src = tile.src.includes("?") ? tile.src + "&_cors=1" : tile.src + "?_cors=1";
       })));
     }
 
-    // ── 2. Heatmap overlay (our own canvas data URL — no CORS issues) ──
     const dataUrl = heatmapDataUrlRef.current;
     if (dataUrl) {
       await new Promise<void>((resolve) => {
         const img = new Image();
         img.onload = () => {
-          // The overlay covers the full expanded bounds; we need to position it
-          // relative to the current map view using Leaflet's projection.
           const overlayLayer = heatmapOverlayRef.current;
           if (overlayLayer && mapRef.current) {
             const bounds = overlayLayer.getBounds();
@@ -148,13 +166,11 @@ const Map = forwardRef<MapHandle, MapProps>(
       });
     }
 
-    // ── 3. Build filename: "map-<city>-<lat>,<lng>-z<zoom>.png" ──
     const center = mapRef.current.getCenter();
     const zoom   = mapRef.current.getZoom();
     const lat    = center.lat.toFixed(4);
     const lng    = center.lng.toFixed(4);
 
-    // Reverse-geocode to get a city name (best-effort; falls back to coords)
     let place = `${lat},${lng}`;
     try {
       const res = await fetch(
@@ -182,7 +198,9 @@ const Map = forwardRef<MapHandle, MapProps>(
     exportPng: () => exportMapPng(),
   }), []);
 
-  // ─── Map init ────────────────────────────────────────────────────────────────
+  // ─── Map init — runs once only ──────────────────────────────────────────────
+  // NOTE: no layer-state variables in the dependency array; layer changes are
+  // handled via their own useEffects above so the map is never re-created.
 
   useEffect(() => {
     if (mapRef.current) return;
@@ -203,7 +221,6 @@ const Map = forwardRef<MapHandle, MapProps>(
       updateWhenIdle: false,
     }).addTo(mapRef.current);
 
-    // Click handler — sample the score grid and show a greenness popup
     mapRef.current.on("click", (e: L.LeafletMouseEvent) => {
       if (!showHeatmapRef.current) return;
       const snap = scoreGridSnapshotRef.current;
@@ -214,24 +231,18 @@ const Map = forwardRef<MapHandle, MapProps>(
       const MAX_SCORE = 1e2;
       const ratio = Math.pow(Math.min(score / MAX_SCORE, 1), 0.5);
       const pct = Math.round(ratio * 100);
-
-      // Pick a label based on the score
       const label = `${score}`;
 
       if (greenPopupRef.current) {
         mapRef.current?.closePopup(greenPopupRef.current);
       }
-
-      // greenPopupRef.current = L.popup({ className: "greenness-popup" })
-      //   .setLatLng(e.latlng)
-      //   .setContent(buildGreennessPopup(pct, label))
-      //   .openOn(mapRef.current!);
     });
 
     fetchAndLoad();
 
     mapRef.current.on("moveend", () => {
       const now = performance.now();
+      syncUrlToMap();
       if (now - lastMoveRef.current > MOVE_DEBOUNCE_MS) {
         lastMoveRef.current = now;
         fetchAndLoad();
@@ -244,14 +255,14 @@ const Map = forwardRef<MapHandle, MapProps>(
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [showParks, showHeatmap]);
+  }, []); // Empty deps — map init is intentionally side-effect-only
 
   useEffect(() => {
     if (!mapRef.current) return;
     redrawParksRef.current();
   }, [refreshKey, activeTags, heatmapParams]);
 
-  // ─── Score grid sampling ──────────────────────────────────────────────────────
+  // ─── Score grid sampling ────────────────────────────────────────────────────
 
   function sampleScoreGrid(snap: ScoreGridSnapshot, lat: number, lng: number): number {
     const { grid, gridWidth, gridHeight, bounds, coordStep } = snap;
@@ -273,7 +284,7 @@ const Map = forwardRef<MapHandle, MapProps>(
     );
   }
 
-  // ─── Greenness popup content ──────────────────────────────────────────────────
+  // ─── Greenness popup ────────────────────────────────────────────────────────
 
   function buildGreennessPopup(pct: number, label: string): HTMLDivElement {
     const container = document.createElement("div");
@@ -289,8 +300,7 @@ const Map = forwardRef<MapHandle, MapProps>(
       background: #e0e0e0; overflow: hidden;
     `;
     const barInner = document.createElement("div");
-    // Interpolate bar color from red → yellow → green
-    const hue = Math.round(pct * 1.2); // 0→red, 120→green
+    const hue = Math.round(pct * 1.2);
     barInner.style.cssText = `
       width: ${pct}%; height: 100%; border-radius: 999px;
       background: hsl(${hue}, 80%, 45%); transition: width 0.3s;
@@ -307,47 +317,42 @@ const Map = forwardRef<MapHandle, MapProps>(
     return container;
   }
 
-  // ─── Heatmap worker ───────────────────────────────────────────────────────────
+  // ─── Heatmap worker ─────────────────────────────────────────────────────────
 
-interface HeatmapWorkerPayload {
-  parks: {
-    outerRings: [number, number][][];
-    area: number;
-    boundingBox: [number, number, number, number];
-    id: string | number;
-  }[];
-  mapSize: { x: number; y: number };
-  coordGrid: { lat: number; lng: number }[][];
-  coordStep: number;
-  bounds: { north: number; south: number; east: number; west: number };
-  heatmapExtraFactor: number;
-  areaPow: number;
-  sigma: number;
-  maxScore: number;
-}
+  interface HeatmapWorkerPayload {
+    parks: {
+      outerRings: [number, number][][];
+      area: number;
+      boundingBox: [number, number, number, number];
+      id: string | number;
+    }[];
+    mapSize: { x: number; y: number };
+    coordGrid: { lat: number; lng: number }[][];
+    coordStep: number;
+    bounds: { north: number; south: number; east: number; west: number };
+    heatmapExtraFactor: number;
+    areaPow: number;
+    sigma: number;
+    maxScore: number;
+  }
 
   function spawnHeatmapWorker(payload: HeatmapWorkerPayload) {
-    // Terminate any in-flight worker — but do NOT remove the existing overlay yet.
-    // The old overlay stays visible until the new one is ready (no flash).
     if (workerRef.current) {
       workerRef.current.terminate();
       workerRef.current = null;
     }
 
-    // Stamp this request so stale callbacks from previous workers are ignored.
     const gen = ++heatmapGenRef.current;
 
     const worker = createHeatmapWorker();
     workerRef.current = worker;
 
     worker.onmessage = (e: MessageEvent) => {
-      // Discard results that belong to a superseded request.
       if (gen !== heatmapGenRef.current) return;
       if (!mapRef.current) return;
 
       const { imageDataArray, width, height, bounds, scoreGrid, gridWidth, gridHeight, coordStep } = e.data;
 
-      // Update the score grid snapshot for click-sampling.
       scoreGridSnapshotRef.current = {
         grid: new Float32Array(scoreGrid),
         gridWidth,
@@ -364,7 +369,6 @@ interface HeatmapWorkerPayload {
       const dataUrl = canvas.toDataURL();
       heatmapDataUrlRef.current = dataUrl;
 
-      // Swap overlays: add new one first, then remove old — eliminates the blank flash.
       const newOverlay = L.imageOverlay(
         dataUrl,
         [[bounds.north, bounds.west], [bounds.south, bounds.east]],
@@ -380,7 +384,7 @@ interface HeatmapWorkerPayload {
     worker.postMessage(payload);
   }
 
-  // ─── Popup helpers ────────────────────────────────────────────────────────────
+  // ─── Popup helpers ───────────────────────────────────────────────────────────
 
   function buildTagChips(tags: string[]): HTMLDivElement {
     const row = document.createElement("div");
@@ -437,7 +441,7 @@ interface HeatmapWorkerPayload {
     return container;
   }
 
-  // ─── GeoJSON conversion ───────────────────────────────────────────────────────
+  // ─── GeoJSON conversion ──────────────────────────────────────────────────────
 
   function parkToFeature(park: Park): Feature<MultiPolygon, any> {
     return {
@@ -517,9 +521,6 @@ interface HeatmapWorkerPayload {
         }))
       );
 
-      // Use the already tag-filtered parks so the heatmap stays in sync with
-      // the active filter. spawnHeatmapWorker keeps the old overlay alive until
-      // the new image is ready (no flash).
       spawnHeatmapWorker({
         parks: parks.map((p) => ({
           outerRings: p.polygons.map((poly) => poly[0]),
@@ -542,7 +543,6 @@ interface HeatmapWorkerPayload {
       heatmapOverlayRef.current = null;
       scoreGridSnapshotRef.current = null;
       heatmapDataUrlRef.current = null;
-      // Reset the generation counter so any late-arriving worker message is discarded.
       heatmapGenRef.current++;
     }
   }
@@ -560,6 +560,7 @@ interface HeatmapWorkerPayload {
 
   async function fetchAndLoad() {
     if (!mapRef.current) return;
+    onLoadingRef.current?.(true);
     const bounds = getExpandedBounds();
     try {
       await updateParkData([bounds.north, bounds.east, bounds.south, bounds.west]);
@@ -568,6 +569,8 @@ interface HeatmapWorkerPayload {
       paintLayers(parks, bounds);
     } catch (error) {
       console.error("Error loading parks:", error);
+    } finally {
+      onLoadingRef.current?.(false);
     }
   }
 

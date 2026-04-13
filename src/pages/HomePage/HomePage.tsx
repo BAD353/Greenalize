@@ -13,6 +13,7 @@ import {
 import type { MapHandle } from "../../components/Map/Map";
 import { DEFAULT_HEATMAP_PARAMS } from "../../components/Map/Map";
 import type { HeatmapParams } from "../../components/Map/Map";
+import { useNavigate } from "react-router-dom";
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -52,14 +53,15 @@ export default function HomePage() {
   const [isParkLayerEnabled, setParkLayer] = useState(true);
   const [isMenuOpen, toggleMenu] = useState(false);
   const [deletedParks, setDeletedParks] = useState<DeletedPark[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  // Tag filter state — availableTags is populated by Map after each data load
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [heatmapParams, setHeatmapParams] = useState<HeatmapParams>(DEFAULT_HEATMAP_PARAMS);
 
   const mapRef = useRef<MapHandle>(null);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
+  const navigate = useNavigate();
 
   const handleDeletePark = async (park) => {
     await deletePark(park);
@@ -79,13 +81,22 @@ export default function HomePage() {
     setMapRefreshKey((k) => k + 1);
   };
 
-  // On mount, load persisted deleted parks
   useEffect(() => {
     loadDeletedParks().then(() => setDeletedParks(getDeletedParks()));
   }, []);
 
   return (
     <div style={styles.page}>
+      {/* Loading overlay — shown on first data fetch */}
+      {/* {isLoading && (
+        <div style={styles.loadingOverlay}>
+          <div style={styles.loadingCard}>
+            <div style={styles.loadingSpinner} />
+            <span style={styles.loadingText}>Loading parks…</span>
+          </div>
+        </div>
+      )} */}
+
       <Suspense fallback={<div>Loading map...</div>}>
         <Map
           ref={mapRef}
@@ -96,11 +107,12 @@ export default function HomePage() {
           activeTags={selectedTags}
           onTagsAvailable={setAvailableTags}
           heatmapParams={heatmapParams}
+          onLoading={setIsLoading}
         />
       </Suspense>
 
       <div style={styles.buttons}>
-        {/* Soft reload — refetches data without clearing the cache */}
+        {/* Soft reload */}
         <div
           style={styles.resetButton}
           onClick={() => forceReload()}
@@ -109,7 +121,7 @@ export default function HomePage() {
           <img src={"/assets/icons/redo-2.svg"} style={{ height: "1.5rem", width: "1.5rem" }} />
         </div>
 
-        {/* Export heatmap as PNG — only active when heatmap layer is on */}
+        {/* Export heatmap as PNG */}
         <div
           style={{
             ...styles.resetButton,
@@ -139,6 +151,7 @@ export default function HomePage() {
       {isMenuOpen ? (
         <Sidebar
           onClose={() => toggleMenu(false)}
+          onBack={() => navigate("/")}
           showParks={isParkLayerEnabled}
           showHeatmap={isHeatmapLayerEnabled}
           onSetParks={(value) => setParkLayer(value)}
@@ -172,6 +185,47 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     fontFamily: "Inter, sans-serif",
   },
+
+  // ── Loading overlay ──
+  loadingOverlay: {
+    position: "absolute",
+    inset: 0,
+    zIndex: 9999,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "rgba(255, 255, 255, 0.55)",
+    backdropFilter: "blur(4px)",
+    WebkitBackdropFilter: "blur(4px)",
+    pointerEvents: "all",
+  },
+  loadingCard: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "1rem",
+    background: "#ffffff",
+    border: "2px solid var(--button-border-green)",
+    borderRadius: "16px",
+    padding: "2rem 3rem",
+    boxShadow: "0 8px 30px rgba(121, 163, 124, 0.2)",
+  },
+  loadingSpinner: {
+    width: "2.5rem",
+    height: "2.5rem",
+    borderRadius: "50%",
+    border: "3px solid rgba(121, 163, 124, 0.2)",
+    borderTopColor: "var(--button-border-green, #79a37c)",
+    animation: "spin 0.8s linear infinite",
+  },
+  loadingText: {
+    color: "#4b6f54",
+    fontSize: "1rem",
+    fontWeight: 500,
+    letterSpacing: "0.02em",
+  },
+
+  // ── Map UI ──
   buttons: {
     position: "absolute",
     top: "1rem",
@@ -221,3 +275,14 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: "100",
   },
 };
+
+// // Inject the spinner keyframe once
+// if (typeof document !== "undefined") {
+//   const styleId = "home-page-spinner-style";
+//   if (!document.getElementById(styleId)) {
+//     const s = document.createElement("style");
+//     s.id = styleId;
+//     s.textContent = `@keyframes spin { to { transform: rotate(360deg); } }`;
+//     document.head.appendChild(s);
+//   }
+// }

@@ -264,6 +264,7 @@ type Tab = "filters" | "deleted";
 
 const Sidebar = ({
   onClose,
+  onBack,
   showParks,
   showHeatmap,
   onSetParks,
@@ -278,6 +279,7 @@ const Sidebar = ({
   onHeatmapParamsChanged,
 }: {
   onClose: Function;
+  onBack: () => void;
   showParks: boolean;
   showHeatmap: boolean;
   onSetParks: Function;
@@ -306,7 +308,16 @@ const Sidebar = ({
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <p style={styles.heading}>Customize your map!</p>
+        <div style={styles.headerLeft}>
+          <div
+            style={styles.backButton}
+            onClick={() => onBack()}
+            title="Back to landing page"
+          >
+            <img src="/assets/icons/arrow-green.svg" style={{ height: "1.25rem", width: "1.25rem" }} />
+          </div>
+          <p style={styles.heading}>Customize your map!</p>
+        </div>
         <img
           src="/assets/icons/close.svg"
           style={styles.closeButton}
@@ -440,6 +451,22 @@ const styles: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: "1.25rem",
+  },
+  headerLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+  },
+  backButton: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "2rem",
+    height: "2rem",
+    borderRadius: "8px",
+    border: "2px solid var(--button-border-green)",
+    cursor: "pointer",
+    flexShrink: 0,
   },
   heading: {
     fontSize: "1.35rem",
