@@ -269,6 +269,5 @@ export default function convertToParkList(elements: any[]): Park[] {
       if (park) parks.push(park);
     }
   }
-  console.log(parks);
   return parks;
 }

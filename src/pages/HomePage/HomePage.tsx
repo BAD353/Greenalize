@@ -2,6 +2,8 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import { forceReload } from "../../backend/mapData/mapData";
 import toast, { Toaster } from "react-hot-toast";
 import Sidebar from "../../components/sidebar/sidebar";
+import LoadingPopup from "../../components/LoadingPopup/LoadingPopup";
+import LoadingScreen from "../../components/LoadingScreen/LoadingScreen";
 import {
   deletePark,
   getDeletedParks,
@@ -14,6 +16,10 @@ import type { MapHandle } from "../../components/Map/Map";
 import { DEFAULT_HEATMAP_PARAMS } from "../../components/Map/Map";
 import type { HeatmapParams } from "../../components/Map/Map";
 import { useNavigate } from "react-router-dom";
+import { DEFAULT_SELECTED_TAGS } from "../../utils/tagGroups";
+
+const MIN_LOADING_SCREEN_MS = 1000;
+const LOADING_SCREEN_FADE_MS = 500;
 
 const Map = React.lazy(() => import("../../components/Map/Map"));
 
@@ -54,9 +60,13 @@ export default function HomePage() {
   const [isMenuOpen, toggleMenu] = useState(false);
   const [deletedParks, setDeletedParks] = useState<DeletedPark[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const [showLoadingScreen, setShowLoadingScreen] = useState(true);
+  const [cityName] = useState(() => new URLSearchParams(window.location.search).get("name"));
+  const mountedAtRef = useRef(performance.now());
 
   const [availableTags, setAvailableTags] = useState<string[]>([]);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedTags, setSelectedTags] = useState<string[]>(DEFAULT_SELECTED_TAGS);
   const [heatmapParams, setHeatmapParams] = useState<HeatmapParams>(DEFAULT_HEATMAP_PARAMS);
 
   const mapRef = useRef<MapHandle>(null);
@@ -79,6 +89,15 @@ export default function HomePage() {
     await clearDeletedParks();
     setDeletedParks([]);
     setMapRefreshKey((k) => k + 1);
+  };
+
+  // The loading screen covers the first load only, later loads use the popup. It stays up briefly so it never just flashes.
+  const handleMapReady = () => {
+    const remaining = Math.max(0, MIN_LOADING_SCREEN_MS - (performance.now() - mountedAtRef.current));
+    setTimeout(() => {
+      setIsMapReady(true);
+      setTimeout(() => setShowLoadingScreen(false), LOADING_SCREEN_FADE_MS);
+    }, remaining);
   };
 
   useEffect(() => {
@@ -108,8 +127,12 @@ export default function HomePage() {
           onTagsAvailable={setAvailableTags}
           heatmapParams={heatmapParams}
           onLoading={setIsLoading}
+          onReady={handleMapReady}
         />
       </Suspense>
+
+      {isMapReady && <LoadingPopup />}
+      {showLoadingScreen && <LoadingScreen isReady={isMapReady} cityName={cityName} />}
 
       <div style={styles.buttons}>
         {/* Soft reload */}

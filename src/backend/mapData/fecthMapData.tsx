@@ -1,15 +1,19 @@
+import { getOverpassServerUrl } from './overpassServer';
+import { readJsonWithProgress, type DownloadProgress } from './readJsonWithProgress';
+
 export async function fetchMapData(
   south: number,
   west: number,
   north: number,
-  east: number
+  east: number,
+  onProgress?: DownloadProgress
 ) {
   // south = 41.388219-0.05;
   // north = 41.388219+0.05;
   // east = 2.188125+0.05;
   // west = 2.188125-0.05;
   const query = `
-    [out:json][timeout:25];
+    [out:json][timeout:90];
     (
       relation["leisure"="park"](${south},${west},${north},${east});
       way["leisure"="park"](${south},${west},${north},${east});
@@ -34,6 +38,8 @@ export async function fetchMapData(
       // Landuse greenery
       relation["landuse"="forest"](${south},${west},${north},${east});
       way["landuse"="forest"](${south},${west},${north},${east});
+      relation["landuse"="grass"](${south},${west},${north},${east});
+      way["landuse"="grass"](${south},${west},${north},${east});
       relation["landuse"="allotments"](${south},${west},${north},${east});
       way["landuse"="allotments"](${south},${west},${north},${east});
       relation["landuse"="recreation_ground"](${south},${west},${north},${east});
@@ -50,14 +56,17 @@ export async function fetchMapData(
     out geom;
   `;
 
-  const response = await fetch('https://overpass-api.de/api/interpreter', {
+  const response = await fetch(getOverpassServerUrl(), {
     method: 'POST',
     body: query,
   });
 
   if (!response.ok) {
-    throw new Error('Failed to fetch parks data');
+    const error: any = new Error('Failed to fetch parks data');
+    error.status = response.status;
+    error.retryAfter = response.headers.get('Retry-After');
+    throw error;
   }
-  let data = await response.json();
+  let data = await readJsonWithProgress(response, onProgress);
   return data.elements;
 }

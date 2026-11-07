@@ -1,16 +1,34 @@
 /// <reference lib="webworker" />
 export {};
+
+// Parks of this area get exactly the base half-distance, bigger ones reach further
+const SIZE_REFERENCE_AREA = 10000;
+const SIZE_DISTANCE_CAP_AREA = 1000000;
+const MIN_SIZE_DISTANCE_FACTOR = 0.25;
+const MAX_SIZE_DISTANCE_FACTOR = 3;
+
+// A park's influence is 0.5^25 (about 3e-8) at this many half-distances, which no colour can show
+const INFLUENCE_CUTOFF_FACTOR = 5;
+
+// The heatmap is a smooth gradient, so rendering it at half size is invisible but 4x cheaper to draw and encode
+const IMAGE_RESOLUTION = 0.5;
+
+// Outline points closer than this share of a grid cell to the simplified outline are dropped
+const SIMPLIFY_TOLERANCE_CELLS = 0.5;
+const MIN_POINTS_TO_SIMPLIFY = 16;
+
+const COLOR_STEPS = 256;
+
 self.onmessage = (e: MessageEvent) => {
   const {
-    parks, mapSize, coordGrid, coordStep, bounds, heatmapExtraFactor,
-    areaPow, sigma, maxScore,
+    parks, mapSize, gridWidth, gridHeight, coordStep, bounds, heatmapExtraFactor,
+    areaPow, halfDistance, maxScore, autoSensitivity, autoGreenShare,
   } = e.data;
 
-  const MAX_SCORE = maxScore;
 
   const scale = 1 + 2 * heatmapExtraFactor;
-  const outWidth  = Math.round(mapSize.x * scale);
-  const outHeight = Math.round(mapSize.y * scale);
+  const outWidth  = Math.round(mapSize.x * scale * IMAGE_RESOLUTION);
+  const outHeight = Math.round(mapSize.y * scale * IMAGE_RESOLUTION);
 
   const latPad = (bounds.north - bounds.south) * heatmapExtraFactor;
   const lngPad = (bounds.east  - bounds.west)  * heatmapExtraFactor;
@@ -21,33 +39,21 @@ self.onmessage = (e: MessageEvent) => {
     west:  bounds.west  - lngPad,
   };
 
-  const gridHeight = coordGrid.length - 1;
-  const gridWidth  = coordGrid[0].length - 1;
   const scoreGrid  = new Float32Array((gridWidth + 1) * (gridHeight + 1));
 
   const minDist    = 0;
-  const maxDist    = 0.1;
   const minArea    = 1000;
+  const minParkArea = 100;
   const maxArea    = 100000;
 
-  const gridSize = (gridWidth + 1) * (gridHeight + 1);
-  const gridLat = new Float64Array(gridSize);
-  const gridLng = new Float64Array(gridSize);
-  for (let gy = 0; gy <= gridHeight; gy++) {
-    for (let gx = 0; gx <= gridWidth; gx++) {
-      const idx = gy * (gridWidth + 1) + gx;
-      gridLat[idx] = coordGrid[gy][gx].lat;
-      gridLng[idx] = coordGrid[gy][gx].lng;
-    }
-  }
-
+  // The grid is regular: cell (gx, gy) sits at lat = gridNorth - gy * coordStep, lng = gridWest + gx * coordStep
   const gridNorth = expandedBounds.north;
   const gridSouth = expandedBounds.south;
   const gridEast  = expandedBounds.east;
   const gridWest  = expandedBounds.west;
 
   for (const park of parks) {
-    if (!park.area || park.area < minArea) continue;
+    if (!park.area || park.area < minParkArea) continue;
     if (park.boundingBox === undefined) {
       console.warn("Park missing bounding box:", park);
       continue;
@@ -56,17 +62,31 @@ self.onmessage = (e: MessageEvent) => {
     const [pNorth, pEast, pSouth, pWest] = park.boundingBox;
     const parkW = Math.max(pNorth - pSouth, pEast - pWest);
 
-    const viewLatDist = Math.max(0, Math.max(pSouth - gridNorth, gridSouth - pNorth));
-    const viewLngDist = Math.max(0, Math.max(pWest  - gridEast,  gridWest  - pEast));
-    if (viewLatDist**2 + viewLngDist**2 > maxDist ** 2) continue;
-
     const scaledArea = Math.pow(Math.min(park.area, maxArea) / minArea, areaPow);
 
+    // Half-distance scales with park size (same importance setting as the score) and with how green the park is
+    const sizeFactor = Math.min(
+      MAX_SIZE_DISTANCE_FACTOR,
+      Math.max(MIN_SIZE_DISTANCE_FACTOR, Math.pow(Math.min(park.area, SIZE_DISTANCE_CAP_AREA) / SIZE_REFERENCE_AREA, areaPow / 2))
+    );
+    const parkHalfDistance = halfDistance * sizeFactor * (park.greenness ?? 1);
+
+    // Beyond this distance the influence is effectively zero, so only the cells around the park need visiting
+    const cutoff = parkHalfDistance * INFLUENCE_CUTOFF_FACTOR;
+    const gxMin = Math.max(0, Math.ceil((pWest - cutoff - gridWest) / coordStep));
+    const gxMax = Math.min(gridWidth, Math.floor((pEast + cutoff - gridWest) / coordStep));
+    const gyMin = Math.max(0, Math.ceil((gridNorth - (pNorth + cutoff)) / coordStep));
+    const gyMax = Math.min(gridHeight, Math.floor((gridNorth - (pSouth - cutoff)) / coordStep));
+    if (gxMin > gxMax || gyMin > gyMax) continue;
+
+    // Detail finer than a grid cell cannot show up in the heatmap, so large outlines are simplified first
+    const rings: number[][][] = park.outerRings.map((ring: number[][]) => simplifyRing(ring, coordStep * SIMPLIFY_TOLERANCE_CELLS));
+
     let segCount = 0;
-    for (const ring of park.outerRings) segCount += ring.length;
+    for (const ring of rings) segCount += ring.length;
     const segs = new Float32Array(segCount * 4);
     let si = 0;
-    for (const ring of park.outerRings) {
+    for (const ring of rings) {
       for (let i = 0; i < ring.length; i++) {
         const [lat1, lng1] = ring[i];
         const [lat2, lng2] = ring[(i + 1) % ring.length];
@@ -75,34 +95,51 @@ self.onmessage = (e: MessageEvent) => {
       }
     }
 
-    for (let idx = 0; idx < gridSize; idx++) {
-      const lat = gridLat[idx];
-      const lng = gridLng[idx];
+    for (let gy = gyMin; gy <= gyMax; gy++) {
+      const lat = gridNorth - gy * coordStep;
+      for (let gx = gxMin; gx <= gxMax; gx++) {
+        const lng = gridWest + gx * coordStep;
 
-      const latDist = Math.max(0, Math.max(pSouth - lat, lat - pNorth));
-      const lngDist = Math.max(0, Math.max(pWest  - lng, lng - pEast));
-      const bboxDist = Math.sqrt(latDist * latDist + lngDist * lngDist);
-      if (bboxDist > maxDist) continue;
+        const latDist = Math.max(0, Math.max(pSouth - lat, lat - pNorth));
+        const lngDist = Math.max(0, Math.max(pWest  - lng, lng - pEast));
+        const bboxDist = Math.sqrt(latDist * latDist + lngDist * lngDist);
+        if (bboxDist > cutoff) continue;
 
-      let minD: number;
+        let minD: number;
 
-      if (bboxDist > 3 * parkW) {
-        minD = Math.max(bboxDist, minDist);
-      } else {
-        minD = Infinity;
-        for (let s = 0; s < segs.length; s += 4) {
-          const d = pointToSegmentDistance(lat, lng, segs[s], segs[s+1], segs[s+2], segs[s+3]);
-          if (d < minD) minD = d;
-        }
-        if (pointInPolygon(lat, lng, park.outerRings)) {
+        if (bboxDist > 3 * parkW) {
+          minD = Math.max(bboxDist, minDist);
+        } else if (bboxDist === 0 && pointInPolygon(lat, lng, rings)) {
+          // Inside the park the distance is zero, no need to measure it to every edge
           minD = minDist;
         } else {
+          minD = Infinity;
+          for (let s = 0; s < segs.length; s += 4) {
+            const d = pointToSegmentDistance(lat, lng, segs[s], segs[s+1], segs[s+2], segs[s+3]);
+            if (d < minD) minD = d;
+          }
           minD = Math.max(minD, minDist);
         }
-      }
 
-      scoreGrid[idx] += scaledArea * Math.exp(- (minD**2) / (2 * sigma**2));
+        scoreGrid[gy * (gridWidth + 1) + gx] += scaledArea * Math.pow(0.5, (minD / parkHalfDistance) ** 2);
+      }
     }
+  }
+  // With auto sensitivity, saturate at the score most of the map stays below so the view always has both green and red
+  let MAX_SCORE = maxScore;
+  if (autoSensitivity) {
+    const sorted = Float32Array.from(scoreGrid).sort();
+    const reference = sorted[Math.floor((1 - autoGreenShare) * (sorted.length - 1))];
+    if (reference > 1e-6) MAX_SCORE = reference;
+  }
+
+  // Converting the colour for every pixel is slow, so the red to green scale is computed once
+  const colorLut = new Uint8Array(COLOR_STEPS * 3);
+  for (let i = 0; i < COLOR_STEPS; i++) {
+    const [r, g, b] = hslToRgb(0.33 * (i / (COLOR_STEPS - 1)), 1, 0.5);
+    colorLut[i * 3] = r;
+    colorLut[i * 3 + 1] = g;
+    colorLut[i * 3 + 2] = b;
   }
 
   const imageDataArray = new Uint8ClampedArray(outWidth * outHeight * 4);
@@ -112,25 +149,24 @@ self.onmessage = (e: MessageEvent) => {
 
   for (let y = 0; y < outHeight; y++) {
     const lat = expandedBounds.north - (y / outHeight) * latRange;
-    const gy  = (bounds.north - lat) / coordStep;
+    const gy  = (expandedBounds.north - lat) / coordStep;
     const gy1 = Math.floor(Math.max(0, Math.min(gridHeight - 1, gy)));
     const gy2 = gy1 + 1;
     const dy  = gy - gy1;
     for (let x = 0; x < outWidth; x++) {
       const lng = expandedBounds.west + (x / outWidth) * lngRange;
-      const gx  = (lng - bounds.west) / coordStep;
+      const gx  = (lng - expandedBounds.west) / coordStep;
       const gx1 = Math.floor(Math.max(0, Math.min(gridWidth - 1, gx)));
       const gx2 = gx1 + 1;
       const dx  = gx - gx1;
       const score =
         (getGrid(gx1, gy1) * (1 - dx) + getGrid(gx2, gy1) * dx) * (1 - dy) +
         (getGrid(gx1, gy2) * (1 - dx) + getGrid(gx2, gy2) * dx) * dy;
-      const ratio = Math.pow(Math.min(score / MAX_SCORE, 1), 0.5);
-      const [r, g, b] = hslToRgb(0.33 * ratio, 1, 0.5);
+      const lutIndex = Math.round(Math.sqrt(Math.min(score / MAX_SCORE, 1)) * (COLOR_STEPS - 1)) * 3;
       const i = (y * outWidth + x) * 4;
-      imageDataArray[i]     = r;
-      imageDataArray[i + 1] = g;
-      imageDataArray[i + 2] = b;
+      imageDataArray[i]     = colorLut[lutIndex];
+      imageDataArray[i + 1] = colorLut[lutIndex + 1];
+      imageDataArray[i + 2] = colorLut[lutIndex + 2];
       imageDataArray[i + 3] = 160;
     }
   }
@@ -146,6 +182,36 @@ self.onmessage = (e: MessageEvent) => {
     coordStep,
   }, [scoreGrid.buffer, imageDataArray.buffer]);
 };
+
+// Douglas-Peucker, iterative so very long outlines cannot overflow the call stack
+function simplifyRing(ring: number[][], tolerance: number): number[][] {
+  const n = ring.length;
+  if (n <= MIN_POINTS_TO_SIMPLIFY) return ring;
+
+  const keep = new Uint8Array(n);
+  keep[0] = 1;
+  keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+
+  while (stack.length) {
+    const [first, last] = stack.pop()!;
+    let maxDist = 0;
+    let maxIndex = -1;
+    for (let i = first + 1; i < last; i++) {
+      const d = pointToSegmentDistance(ring[i][0], ring[i][1], ring[first][0], ring[first][1], ring[last][0], ring[last][1]);
+      if (d > maxDist) {
+        maxDist = d;
+        maxIndex = i;
+      }
+    }
+    if (maxIndex !== -1 && maxDist > tolerance) {
+      keep[maxIndex] = 1;
+      stack.push([first, maxIndex], [maxIndex, last]);
+    }
+  }
+
+  return ring.filter((_, i) => keep[i]);
+}
 
 function pointToSegmentDistance(
   px: number, py: number,
