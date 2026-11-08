@@ -193,10 +193,12 @@ function assignInnerRings(
 /* Park Builder                                                  */
 /* ───────────────────────────────────────────────────────────── */
 
-function buildPark(
+// Derives bounding box, area and center from the outlines, shared by the OSM converter and the preloaded city files
+export function createPark(
   id: number,
+  name: string | undefined,
   polygons: [number, number][][][],
-  tags?: Record<string, string>
+  tags: string[]
 ): Park | null {
 
   if (!polygons.length) return null;
@@ -221,13 +223,21 @@ function buildPark(
 
   return {
     id,
-    name: tags?.name,
+    name,
     polygons,
     boundingBox: bbox,
     area: totalArea,
     center: [centerLat, centerLon],
-    tags: extractTags(tags),
+    tags,
   };
+}
+
+function buildPark(
+  id: number,
+  polygons: [number, number][][][],
+  tags?: Record<string, string>
+): Park | null {
+  return createPark(id, tags?.name, polygons, extractTags(tags));
 }
 
 /* ───────────────────────────────────────────────────────────── */

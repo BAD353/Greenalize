@@ -1,21 +1,23 @@
 import React, { useState } from "react";
 import {
+  AUTO_SERVER_ID,
   OVERPASS_SERVERS,
-  getOverpassServerUrl,
+  getSavedOverpassServerUrl,
   isValidOverpassUrl,
   setOverpassServerUrl,
 } from "../../backend/mapData/overpassServer";
 
 const CUSTOM_ID = "custom";
+const AUTO_NOTE = "Dresel Systems in Europe and overpass-api.de elsewhere, switching to another server if one is busy.";
 
 function findPreset(url: string) {
   return OVERPASS_SERVERS.find((s) => s.url === url);
 }
 
 export default function OverpassServerPicker() {
-  const initialUrl = getOverpassServerUrl();
-  const [selectedId, setSelectedId] = useState(findPreset(initialUrl)?.id ?? CUSTOM_ID);
-  const [customUrl, setCustomUrl] = useState(findPreset(initialUrl) ? "" : initialUrl);
+  const savedUrl = getSavedOverpassServerUrl();
+  const [selectedId, setSelectedId] = useState(savedUrl ? findPreset(savedUrl)?.id ?? CUSTOM_ID : AUTO_SERVER_ID);
+  const [customUrl, setCustomUrl] = useState(savedUrl && !findPreset(savedUrl) ? savedUrl : "");
 
   const selectedPreset = OVERPASS_SERVERS.find((s) => s.id === selectedId);
   const customInvalid = selectedId === CUSTOM_ID && customUrl.length > 0 && !isValidOverpassUrl(customUrl);
@@ -23,7 +25,8 @@ export default function OverpassServerPicker() {
   const handleSelect = (id: string) => {
     setSelectedId(id);
     const preset = OVERPASS_SERVERS.find((s) => s.id === id);
-    if (preset) setOverpassServerUrl(preset.url);
+    if (id === AUTO_SERVER_ID) setOverpassServerUrl(null);
+    else if (preset) setOverpassServerUrl(preset.url);
     else if (isValidOverpassUrl(customUrl)) setOverpassServerUrl(customUrl);
   };
 
@@ -40,13 +43,16 @@ export default function OverpassServerPicker() {
         style={styles.select}
         aria-label="Overpass server"
       >
+        <option value={AUTO_SERVER_ID}>Automatic</option>
         {OVERPASS_SERVERS.map((s) => (
           <option key={s.id} value={s.id}>{s.name}</option>
         ))}
         <option value={CUSTOM_ID}>Custom server</option>
       </select>
 
-      {selectedPreset ? (
+      {selectedId === AUTO_SERVER_ID ? (
+        <span style={styles.hint}>{AUTO_NOTE}</span>
+      ) : selectedPreset ? (
         <span style={styles.hint}>{selectedPreset.note}</span>
       ) : (
         <>

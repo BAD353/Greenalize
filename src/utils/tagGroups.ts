@@ -45,7 +45,7 @@ export const TAG_GROUPS: TagGroup[] = [
     id: "woods",
     name: "Woods & Forest",
     description: "Natural woodland and managed forest",
-    enabledByDefault: false,
+    enabledByDefault: true,
     greenness: 1.4,
     tags: [
       { tag: "wood", label: "Wood" },

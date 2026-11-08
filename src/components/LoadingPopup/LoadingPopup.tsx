@@ -13,7 +13,7 @@ export default function LoadingPopup() {
     <div style={styles.popup}>
       <div style={styles.header}>
         <span style={styles.title}>Loading parks</span>
-        <span style={styles.steps}>{completedSteps}/{TOTAL_STEPS}</span>
+        <span style={styles.steps}>Step {Math.min(completedSteps + 1, TOTAL_STEPS)}/{TOTAL_STEPS}</span>
       </div>
       <ProgressBar
         percent={(completedSteps / TOTAL_STEPS) * 100}

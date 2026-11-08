@@ -4,7 +4,7 @@ import "leaflet/dist/leaflet.css";
 import L from "leaflet";
 import { useNavigate } from "react-router-dom";
 import OverpassServerPicker from "../../components/OverpassServerPicker/OverpassServerPicker";
-import { PRELOADED_CITIES } from "../../utils/preloadedCities";
+import { PRELOADED_CITIES, type PreloadedCity } from "../../utils/preloadedCities";
 
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -44,6 +44,10 @@ function LocationPicker({
 const MAX_SEARCH_RESULTS = 50;
 const EXPLORE_ZOOM = 14;
 const NARROW_BREAKPOINT = 900;
+
+// Measured on dense European cities: the default server sends the data uncompressed
+const LIVE_DOWNLOAD_PER_SQUARE = "3 to 7 MB";
+const LIVE_DOWNLOAD_PER_SCREEN = "about 20 MB on a phone and 50 MB or more on a large screen";
 
 const DISPLAY_FONT = '"Bricolage Grotesque", Inter, sans-serif';
 
@@ -133,6 +137,49 @@ function useIsNarrow() {
   return isNarrow;
 }
 
+const formatSize = (megabytes: number) => `about ${megabytes.toFixed(1)} MB`;
+
+const CityButton = ({ city, onOpen }: { city: PreloadedCity; onOpen: () => void }) => {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <button
+      style={{ ...styles.cityButton, background: hovered ? "#e4efe5" : "#ffffff" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={onOpen}
+    >
+      <span style={styles.cityButtonName}>{city.name}</span>
+      <span style={styles.cityButtonSize}>{formatSize(city.sizeMb)}</span>
+    </button>
+  );
+};
+
+const DataUsageNotice = ({ isLikelyMobile }: { isLikelyMobile: boolean }) => {
+  const sizes = PRELOADED_CITIES.map((c) => c.sizeMb);
+  const preloadedRange = `${Math.min(...sizes).toFixed(1)} to ${Math.max(...sizes).toFixed(1)} MB`;
+
+  return (
+    <div style={isLikelyMobile ? styles.noticeStrong : styles.notice}>
+      <b style={isLikelyMobile ? styles.noticeTitle : undefined}>
+        {isLikelyMobile ? "You seem to be on a phone or mobile data" : "About data usage"}
+      </b>
+      <span>
+        {isLikelyMobile
+          ? `Cities that are not preloaded use ${LIVE_DOWNLOAD_PER_SCREEN} of data. Open one of the preloaded cities above instead, they are only ${preloadedRange}.`
+          : `Cities that are not preloaded are downloaded when you open them, which can take a minute. The server sends about ${LIVE_DOWNLOAD_PER_SQUARE} for every 10 km square in a dense city, which adds up to ${LIVE_DOWNLOAD_PER_SCREEN}. The preloaded cities above are ${preloadedRange}.`}
+      </span>
+    </div>
+  );
+};
+
+function useIsLikelyMobile(isNarrow: boolean) {
+  const connection = (navigator as any).connection;
+  const isMetered =
+    !!connection && (connection.type === "cellular" || connection.saveData || ["slow-2g", "2g", "3g"].includes(connection.effectiveType));
+  return isNarrow || isMetered;
+}
+
 const PrimaryButton = ({
   label,
   hint,
@@ -215,6 +262,7 @@ const Screenshot = ({
 
 export default function LandingPage() {
   const isNarrow = useIsNarrow();
+  const isLikelyMobile = useIsLikelyMobile(isNarrow);
   const navigate = useNavigate();
 
   const [query, setQuery] = useState("");
@@ -333,22 +381,21 @@ export default function LandingPage() {
         >
           <span style={styles.brand}>Greenalize</span>
           <h1 style={styles.title}>
-            See which parts of your city have no green
+            Visualize park density with open source data
           </h1>
           <p style={styles.heroLead}>
             Greenalize turns the parks, woods and gardens in OpenStreetMap into
             a heatmap of how much green space is really nearby.
           </p>
 
-          {PRELOADED_CITIES.map((city) => (
-            <PrimaryButton
-              key={city.id}
-              light
-              label={`Open ${city.name}`}
-              hint="Preloaded, opens right away"
-              onClick={() => explore(city.lat, city.lng, city.zoom, city.name)}
-            />
-          ))}
+          <div style={styles.cityList}>
+            <span style={styles.cityListLabel}>Preloaded cities open right away</span>
+            <div style={styles.cityButtons}>
+              {PRELOADED_CITIES.map((city) => (
+                <CityButton key={city.id} city={city} onOpen={() => navigate(`/preloaded/${city.id}`)} />
+              ))}
+            </div>
+          </div>
 
           <div style={styles.searchContainer} ref={searchContainerRef}>
             <input
@@ -391,10 +438,7 @@ export default function LandingPage() {
               </ul>
             )}
           </div>
-          <p style={styles.hint}>
-            Cities that are not preloaded are downloaded when you open them,
-            which can take a minute.
-          </p>
+          <DataUsageNotice isLikelyMobile={isLikelyMobile} />
         </div>
 
         <div
@@ -645,10 +689,73 @@ const styles: Record<string, React.CSSProperties> = {
     maxWidth: "32rem",
     color: "rgba(255, 255, 255, 0.9)",
   },
-  hint: {
-    margin: 0,
+  cityList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.6rem",
+    width: "100%",
+  },
+  cityListLabel: {
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  cityButtons: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: "0.6rem",
+  },
+  cityButton: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: "0.1rem",
+    padding: "0.6rem 1rem",
+    border: "none",
+    borderRadius: 12,
+    fontFamily: "inherit",
+    color: "#2e4631",
+    cursor: "pointer",
+    boxShadow: "0 6px 16px rgba(0, 0, 0, 0.2)",
+    transition: "background 0.25s ease",
+  },
+  cityButtonName: {
+    fontSize: "1rem",
+    fontWeight: 600,
+  },
+  cityButtonSize: {
+    fontSize: "0.75rem",
+    color: "#4b6f54",
+  },
+  notice: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    boxSizing: "border-box",
+    width: "100%",
+    padding: "0.75rem 1rem",
+    border: "1px solid rgba(255, 255, 255, 0.5)",
+    borderRadius: 10,
     fontSize: "0.85rem",
-    color: "rgba(255, 255, 255, 0.8)",
+    lineHeight: 1.5,
+    color: "rgba(255, 255, 255, 0.9)",
+  },
+  noticeStrong: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.25rem",
+    boxSizing: "border-box",
+    width: "100%",
+    padding: "0.75rem 1rem",
+    background: "#ffffff",
+    border: "2px solid #b3261e",
+    borderRadius: 10,
+    fontSize: "0.9rem",
+    lineHeight: 1.5,
+    color: "#2e4631",
+  },
+  noticeTitle: {
+    color: "#b3261e",
   },
   heroVisual: {
     position: "relative",

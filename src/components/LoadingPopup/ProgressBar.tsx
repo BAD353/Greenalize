@@ -10,13 +10,6 @@ const BLOB_KEYFRAMES = `
 }
 `;
 
-const Blob = ({ color }: { color: string }) => (
-  <div
-    className="loading-blob"
-    style={{ ...styles.blob, background: `linear-gradient(90deg, transparent, ${color}, transparent)` }}
-  />
-);
-
 export default function ProgressBar({
   percent,
   height,
@@ -26,24 +19,24 @@ export default function ProgressBar({
   percent: number;
   height: string;
   light?: boolean;
-  // A blob keeps sweeping across the whole bar so it never looks frozen while the real progress is not moving
+  // A blob keeps sweeping across the part of the bar that is still empty so it never looks frozen
   indeterminate?: boolean;
 }) {
-  // The blob must stay visible on the empty track and on the filled part, so each gets its own contrasting colour
-  const trackBlobColor = light ? "rgba(255, 255, 255, 0.9)" : "var(--green)";
-  const fillBlobColor = light ? "rgba(73, 122, 80, 0.55)" : "rgba(255, 255, 255, 0.7)";
-
   return (
     <div style={{ ...styles.track, height, background: light ? "rgba(255, 255, 255, 0.25)" : "var(--green-background)" }}>
       <style>{BLOB_KEYFRAMES}</style>
-      {indeterminate && <Blob color={trackBlobColor} />}
-      <div style={{ ...styles.fill, width: `${percent}%`, background: light ? "#ffffff" : "var(--green)" }}>
-        {indeterminate && percent > 0 && (
-          <div style={{ ...styles.fillInner, width: `${10000 / percent}%` }}>
-            <Blob color={fillBlobColor} />
-          </div>
-        )}
-      </div>
+      <div style={{ ...styles.fill, width: `${percent}%`, background: light ? "#ffffff" : "var(--green)" }} />
+      {indeterminate && percent < 100 && (
+        <div style={{ ...styles.remaining, left: `${percent}%` }}>
+          <div
+            className="loading-blob"
+            style={{
+              ...styles.blob,
+              background: `linear-gradient(90deg, transparent, ${light ? "rgba(255, 255, 255, 0.9)" : "var(--green)"}, transparent)`,
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -56,24 +49,23 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: "hidden",
   },
   fill: {
-    position: "relative",
+    position: "absolute",
+    top: 0,
+    left: 0,
     height: "100%",
     borderRadius: "999px",
-    overflow: "hidden",
     transition: "width 0.3s ease",
   },
-  // As wide as the whole track, so the blob inside the fill lines up with the one on the track
-  fillInner: {
+  // The empty part of the bar, it follows the fill so the blob never runs over finished progress
+  remaining: {
     position: "absolute",
     top: 0,
-    left: 0,
+    right: 0,
     height: "100%",
     overflow: "hidden",
+    transition: "left 0.3s ease",
   },
   blob: {
-    position: "absolute",
-    top: 0,
-    left: 0,
     width: "30%",
     height: "100%",
     animation: "loading-blob 1.4s linear infinite",

@@ -1,10 +1,12 @@
 import type { Park } from "../../types/park";
-import { booleanPointInPolygon, point, booleanContains } from "@turf/turf";
+import { area, booleanPointInPolygon, featureCollection, intersect, point } from "@turf/turf";
 import type { Feature, Polygon } from "geojson";
 
 // Convert first outer ring to turf polygon for spatial tests
-// Fraction of a park that must lie inside a bigger one for the two to be merged
-const MERGE_CONTAINMENT_THRESHOLD = 0.95;
+// Share of a park's area that must lie inside a bigger one for the two to be merged
+const MERGE_AREA_THRESHOLD = 0.8;
+// Cheap first check on the bounding boxes, the area test decides the rest
+const MERGE_BBOX_PREFILTER = 0.5;
 const MAX_SAMPLED_POINTS = 40;
 
 function parkToTurfPolygon(park: Park): Feature<Polygon> | null {
@@ -31,31 +33,42 @@ function bboxArea(bb: [number, number, number, number]): number {
 }
 
 /**
- * Check if at least MERGE_CONTAINMENT_THRESHOLD of the sampled points of `inner`
- * lie inside `outer` using turf. We sample a subset of points for speed.
+ * Decides whether `inner` lies in `outer` for at least MERGE_AREA_THRESHOLD of its area. A sample of the outline
+ * settles the clear cases, all points inside means inside and none inside means outside. Only a partial overlap
+ * needs the exact intersection, which is far slower.
  */
 function isContainedIn(inner: Park, outer: Park): boolean {
   const outerPoly = parkToTurfPolygon(outer);
-  if (!outerPoly) return false;
+  const innerPoly = parkToTurfPolygon(inner);
+  if (!outerPoly || !innerPoly) return false;
 
   const ring = inner.polygons[0][0];
   const step = Math.max(1, Math.floor(ring.length / MAX_SAMPLED_POINTS));
-  const sampleCount = Math.ceil(ring.length / step);
-  const maxOutside = Math.floor(sampleCount * (1 - MERGE_CONTAINMENT_THRESHOLD));
-  let outside = 0;
+  let inside = 0;
+  let sampled = 0;
 
   for (let i = 0; i < ring.length; i += step) {
     const [lat, lon] = ring[i];
+    sampled++;
     try {
-      if (!booleanPointInPolygon(point([lon, lat]), outerPoly)) outside++;
+      if (booleanPointInPolygon(point([lon, lat]), outerPoly)) inside++;
     } catch {
-      outside++;
+      // A point that cannot be tested counts as outside
     }
-    if (outside > maxOutside) return false;
   }
-  return true;
-}
 
+  if (inside === sampled) return true;
+  if (inside === 0) return false;
+
+  try {
+    const innerArea = area(innerPoly);
+    if (innerArea === 0) return false;
+    const overlap = intersect(featureCollection([innerPoly, outerPoly]));
+    return !!overlap && area(overlap) / innerArea >= MERGE_AREA_THRESHOLD;
+  } catch {
+    return false;
+  }
+}
 /**
  * Fraction of bbox `inner` that lies inside bbox `outer` (0–1).
  * bbox format: [north, east, south, west]
@@ -86,7 +99,7 @@ function tryMerge(a: Park, b: Park): Park | undefined {
 
   const [bigger, smaller] = aArea >= bArea ? [a, b] : [b, a];
 
-  if (bboxOverlapFraction(bigger.boundingBox, smaller.boundingBox) < MERGE_CONTAINMENT_THRESHOLD) return undefined;
+  if (bboxOverlapFraction(bigger.boundingBox, smaller.boundingBox) < MERGE_BBOX_PREFILTER) return undefined;
 
   if (!isContainedIn(smaller, bigger)) return undefined;
 

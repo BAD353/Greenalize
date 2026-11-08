@@ -1,81 +1,79 @@
 import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { describeDownload, getLoadProgress, subscribeLoadProgress, TOTAL_STEPS } from "../../backend/mapData/loadProgress";
 import ProgressBar from "../LoadingPopup/ProgressBar";
+import { PRELOADED_CITIES } from "../../utils/preloadedCities";
 
 const HINT_INTERVAL_MS = 7000;
+const CITY_INTERVAL_MS = 6000;
+
+const PHOTO_FADE_MS = 1200;
+
+const FADE_KEYFRAMES = `
+@keyframes loading-caption-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading-photo { transition: none !important; }
+  .loading-caption { animation: none !important; }
+}
+`;
 const NARROW_BREAKPOINT = 900;
 
-type Hint = { label: "Did you know" | "Tip"; text: string; image: string };
-
-const OVERVIEW = "/assets/screenshots/heatmap-overview.jpg";
-const DETAIL = "/assets/screenshots/parks-detail.jpg";
-const FILTERS = "/assets/screenshots/filters-panel.jpg";
+type Hint = { label: "Did you know" | "Tip"; text: string };
 
 const HINTS: Hint[] = [
   {
     label: "Did you know",
     text: "The World Health Organization recommends that everyone lives within 300 metres of a green space of at least half a hectare.",
-    image: OVERVIEW,
   },
   {
     label: "Tip",
     text: "Click a park to see its size and type. If it does not belong on your map, you can delete it from the popup.",
-    image: DETAIL,
   },
   {
     label: "Did you know",
     text: "Shaded surfaces can be 11 to 25 °C cooler than the same surfaces in direct sun.",
-    image: OVERVIEW,
   },
   {
     label: "Tip",
     text: "Open the menu at the top left to switch park types on and off, such as parks, nature reserves, woods or allotments.",
-    image: FILTERS,
   },
   {
     label: "Did you know",
     text: "A city of a million people or more can be 1 to 3 °C warmer than the countryside around it.",
-    image: OVERVIEW,
   },
   {
     label: "Tip",
     text: "Turn on auto-adjust sensitivity in the heatmap settings to keep both green and red areas on screen wherever you look.",
-    image: FILTERS,
   },
   {
     label: "Did you know",
     text: "In a 1984 study, hospital patients with a view of trees went home sooner than those who faced a brick wall.",
-    image: DETAIL,
   },
   {
     label: "Tip",
     text: "The half-influence distance sets how far a park's green reaches. Bigger and greener parks reach further than small ones.",
-    image: FILTERS,
   },
   {
     label: "Did you know",
     text: "Collserola, the forested ridge behind Barcelona, covers about 8,000 hectares and is one of the largest metropolitan parks in the world.",
-    image: OVERVIEW,
   },
   {
     label: "Tip",
     text: "Deleted a park by mistake? Restore it from the Deleted Parks tab in the menu.",
-    image: FILTERS,
   },
   {
     label: "Did you know",
     text: "OpenStreetMap has more than ten million registered users who map the world together.",
-    image: DETAIL,
   },
   {
     label: "Tip",
     text: "Use the download button at the top right to save the heatmap together with the map as a PNG.",
-    image: OVERVIEW,
   },
   {
     label: "Tip",
     text: "If loading is slow, pick another Overpass server at the bottom of the Filters tab.",
-    image: FILTERS,
   },
 ];
 
@@ -96,10 +94,20 @@ export default function LoadingScreen({ isReady, cityName }: { isReady: boolean;
   const download = describeDownload(progress);
 
   const [hintIndex, setHintIndex] = useState(() => Math.floor(Math.random() * HINTS.length));
+  // Start on the city that is being opened when it has a screenshot, otherwise on a random one
+  const [cityIndex, setCityIndex] = useState(() => {
+    const match = PRELOADED_CITIES.findIndex((c) => c.name === cityName);
+    return match >= 0 ? match : Math.floor(Math.random() * PRELOADED_CITIES.length);
+  });
   const [hasStarted, setHasStarted] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setHintIndex((i) => (i + 1) % HINTS.length), HINT_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setCityIndex((i) => (i + 1) % PRELOADED_CITIES.length), CITY_INTERVAL_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -111,6 +119,13 @@ export default function LoadingScreen({ isReady, cityName }: { isReady: boolean;
   const steps = active ? completedSteps : hasStarted ? TOTAL_STEPS : 0;
   const text = active ? description : hasStarted ? "Drawing the heatmap..." : "Getting your map ready...";
   const hint = HINTS[hintIndex];
+  const photoCity = PRELOADED_CITIES[cityIndex];
+
+  // Photos are stacked and crossfade, so the next one is loaded before it is needed and never pops in half drawn
+  const [shownPhotos, setShownPhotos] = useState<Set<number>>(() => new Set([cityIndex]));
+  useEffect(() => {
+    setShownPhotos((shown) => new Set([...shown, cityIndex, (cityIndex + 1) % PRELOADED_CITIES.length]));
+  }, [cityIndex]);
 
   return (
     <div style={{ ...styles.screen, opacity: isReady ? 0 : 1, pointerEvents: isReady ? "none" : "all" }}>
@@ -125,7 +140,7 @@ export default function LoadingScreen({ isReady, cityName }: { isReady: boolean;
           <div style={styles.progress}>
             <div style={styles.header}>
               <span style={styles.title}>{cityName ? `Getting ${cityName} ready` : "Getting your map ready"}</span>
-              <span style={styles.steps}>{steps}/{TOTAL_STEPS}</span>
+              <span style={styles.steps}>Step {Math.min(steps + 1, TOTAL_STEPS)}/{TOTAL_STEPS}</span>
             </div>
             <ProgressBar light percent={(steps / TOTAL_STEPS) * 100} height="0.6rem" indeterminate />
             <span style={styles.description}>{text}</span>
@@ -138,12 +153,27 @@ export default function LoadingScreen({ isReady, cityName }: { isReady: boolean;
           </p>
         </div>
 
-        <img
-          key={hint.image}
-          src={hint.image}
-          alt=""
-          style={{ ...styles.screenshot, width: isNarrow ? "100%" : "min(46vw, 52rem)" }}
-        />
+        <figure style={{ ...styles.figure, width: isNarrow ? "100%" : "min(46vw, 52rem)" }}>
+          <style>{FADE_KEYFRAMES}</style>
+          <div style={styles.photoFrame}>
+            {PRELOADED_CITIES.map((city, index) =>
+              shownPhotos.has(index) ? (
+                <img
+                  key={city.id}
+                  className="loading-photo"
+                  src={city.screenshot}
+                  alt={index === cityIndex ? `A green space heatmap of ${city.name}` : ""}
+                  aria-hidden={index !== cityIndex}
+                  style={{ ...styles.screenshot, opacity: index === cityIndex ? 1 : 0 }}
+                />
+              ) : null
+            )}
+          </div>
+          <figcaption key={photoCity.id} className="loading-caption" style={styles.caption}>
+            <span style={styles.captionName}>{photoCity.name}</span>
+            <span style={styles.captionCountry}>{photoCity.country}</span>
+          </figcaption>
+        </figure>
       </div>
     </div>
   );
@@ -214,14 +244,46 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: "rgba(255, 255, 255, 0.75)",
   },
-  screenshot: {
+  figure: {
     flexShrink: 0,
+    margin: 0,
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+  },
+  photoFrame: {
+    position: "relative",
+    width: "100%",
     aspectRatio: "16 / 10",
-    objectFit: "cover",
-    objectPosition: "left top",
-    display: "block",
-    border: "2px solid #ffffff",
     borderRadius: 12,
     boxShadow: "0 12px 40px rgba(0, 0, 0, 0.3)",
+    background: "rgba(255, 255, 255, 0.15)",
+  },
+  screenshot: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    objectFit: "cover",
+    display: "block",
+    boxSizing: "border-box",
+    border: "2px solid #ffffff",
+    borderRadius: 12,
+    transition: `opacity ${PHOTO_FADE_MS}ms ease-in-out`,
+  },
+  caption: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "0.6rem",
+    animation: `loading-caption-fade ${PHOTO_FADE_MS}ms ease-in-out`,
+  },
+  captionName: {
+    fontFamily: '"Bricolage Grotesque", Inter, sans-serif',
+    fontSize: "1.3rem",
+    fontWeight: 700,
+  },
+  captionCountry: {
+    fontSize: "0.95rem",
+    color: "rgba(255, 255, 255, 0.8)",
   },
 };

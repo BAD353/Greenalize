@@ -425,6 +425,8 @@ const Sidebar = ({
   onTagsChanged,
   heatmapParams = DEFAULT_HEATMAP_PARAMS,
   onHeatmapParamsChanged,
+  preloadedCityName,
+  onLeavePreloaded,
 }: {
   onClose: Function;
   onBack: () => void;
@@ -440,6 +442,8 @@ const Sidebar = ({
   onTagsChanged: (tags: string[]) => void;
   heatmapParams?: HeatmapParams;
   onHeatmapParamsChanged: (p: HeatmapParams) => void;
+  preloadedCityName?: string;
+  onLeavePreloaded?: () => void;
 }) => {
   const [activeTab, setActiveTab] = useState<Tab>("filters");
   const [parksEnabled, setParksEnabled] = useState(showParks);
@@ -455,23 +459,22 @@ const Sidebar = ({
   return (
     <div style={styles.container}>
       {/* Header */}
-      <div style={styles.header}>
-        <div style={styles.headerLeft}>
-          <div
-            style={styles.backButton}
-            onClick={() => onBack()}
-            title="Back to landing page"
-          >
-            <img src="/assets/icons/arrow-green.svg" style={{ height: "1.25rem", width: "1.25rem" }} />
-          </div>
-          <p style={styles.heading}>Customize your map!</p>
-        </div>
+ <div style={styles.header}>
+        <button style={styles.homeButton} onClick={() => onBack()} title="Leave the map and go to the home page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={styles.homeIcon}>
+            <path d="M3 11.5 12 4l9 7.5" />
+            <path d="M5.5 10v9.5h4.5v-5.5h4v5.5h4.5V10" />
+          </svg>
+          Home
+        </button>
         <img
           src="/assets/icons/close.svg"
+          alt="Close menu"
           style={styles.closeButton}
           onClick={() => onClose()}
         />
       </div>
+      <p style={styles.heading}>Customize your map!</p>
 
       {/* Tab bar */}
       <div style={styles.tabBar}>
@@ -530,7 +533,19 @@ const Sidebar = ({
           )}
 
           <p style={{ ...styles.sectionLabel, marginTop: "1rem" }}>Data source</p>
-          <OverpassServerPicker />
+          {preloadedCityName ? (
+            <>
+              <span style={{ ...styles.sliderHint, color: "var(--text-normal)" }}>
+                Showing the preloaded area of {preloadedCityName}. Nothing is downloaded and the map cannot be moved
+                outside it.
+              </span>
+              <button style={styles.restoreButton} onClick={onLeavePreloaded}>
+                Open the full map (downloads more data)
+              </button>
+            </>
+          ) : (
+            <OverpassServerPicker />
+          )}
 
           <div style={{ flex: 1 }} />
 
@@ -587,7 +602,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     flexDirection: "column",
     height: "100vh",
-    minWidth: "min(400px, 25vw)",
+    width: "min(390px, 90vw)",
+    overflowX: "clip",
     boxSizing: "border-box",
     background: "var(--background)",
     borderRight: "3px solid var(--button-border-green)",
@@ -603,28 +619,30 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     marginBottom: "1.25rem",
   },
-  headerLeft: {
+  homeButton: {
     display: "flex",
     alignItems: "center",
-    gap: "0.5rem",
-  },
-  backButton: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "2rem",
-    height: "2rem",
+    gap: "0.4rem",
+    padding: "0.3rem 0.7rem 0.3rem 0.5rem",
     borderRadius: "8px",
     border: "2px solid var(--button-border-green)",
+    background: "var(--green-background)",
+    color: "var(--text-heading)",
+    fontFamily: "inherit",
+    fontSize: "0.95rem",
+    fontWeight: "bold",
     cursor: "pointer",
-    flexShrink: 0,
+  },
+  homeIcon: {
+    width: "1.25rem",
+    height: "1.25rem",
   },
   heading: {
-    fontSize: "1.35rem",
+    fontSize: "1.2rem",
     color: "var(--text-heading)",
     fontWeight: "bold",
     textShadow: "0 0 6px var(--text-shadow)",
-    margin: 0,
+    margin: "0 0 1rem 0",
   },
   closeButton: {
     width: "2rem",
@@ -682,6 +700,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     gap: "0.5rem",
     overflowY: "auto",
+    overflowX: "clip",
   },
   sectionLabel: {
     fontSize: "0.78rem",
@@ -730,6 +749,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   slider: {
     width: "100%",
+    margin: 0,
     accentColor: "var(--green)",
     cursor: "pointer",
   },
@@ -833,6 +853,7 @@ const styles: Record<string, React.CSSProperties> = {
   smallIcon: {
     width: "1.5rem",
     height: "1.5rem",
+    flexShrink: 0,
     cursor: "pointer",
   },
   resetDefaultButton: {

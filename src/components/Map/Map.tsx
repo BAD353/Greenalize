@@ -6,12 +6,17 @@ import type { Feature, FeatureCollection, MultiPolygon } from "geojson";
 import getParkColorByArea from "../../utils/parkColor";
 import type { DeletedPark } from "../../backend/mapData/deletedParks";
 import type { Park } from "../../types/park";
+import type { PreloadedCity } from "../../utils/preloadedCities";
 import { getParkGreenness } from "../../utils/tagGroups";
 
 const HEATMAP_EXTRA_FACTOR = 0.2;
 const MOVE_DEBOUNCE_MS = 500;
 const HEATMAP_PARAMS_DEBOUNCE_MS = 200;
 const MAX_HEATMAP_GRID_CELLS = 300;
+// How far beyond the view data is downloaded, as a share of the view. The first load takes more so the first pans are
+// smooth, after that a smaller margin keeps what each pan downloads small.
+const INITIAL_FETCH_MARGIN = 0.25;
+const FETCH_MARGIN = 0.1;
 const MIN_ZOOM = 13;
 const MAX_ZOOM = 19;
 
@@ -61,6 +66,8 @@ type MapProps = {
   heatmapParams?: HeatmapParams;
   onLoading?: (loading: boolean) => void;
   onReady?: () => void;
+  // Limits the map to the area that ships with the app and never downloads anything
+  preloadedCity?: PreloadedCity;
 };
 
 interface ScoreGridSnapshot {
@@ -73,7 +80,7 @@ interface ScoreGridSnapshot {
 
 const Map = forwardRef<MapHandle, MapProps>(
   function Map(
-    { showHeatmap, showParks, onDeletePark, refreshKey, activeTags, onTagsAvailable, heatmapParams, onLoading, onReady },
+    { showHeatmap, showParks, onDeletePark, refreshKey, activeTags, onTagsAvailable, heatmapParams, onLoading, onReady, preloadedCity },
     ref
   ) {
   const mapRef = useRef<L.Map | null>(null);
@@ -116,6 +123,7 @@ const Map = forwardRef<MapHandle, MapProps>(
   const onReadyRef = useRef(onReady);
   useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
   const readySignaledRef = useRef(false);
+  const initialFetchDoneRef = useRef(false);
 
   // Fires once, when the first load is done and the heatmap (if there is one) is on screen
   function signalReady() {
@@ -140,6 +148,8 @@ const Map = forwardRef<MapHandle, MapProps>(
     params.set("lat", center.lat.toFixed(5));
     params.set("lng", center.lng.toFixed(5));
     params.set("zoom", String(zoom));
+    // The city name only describes where the map was opened, so it must not outlive moving the map
+    params.delete("name");
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     // Keep the router's own history state, replacing it with null breaks navigation after a reload
     window.history.replaceState(window.history.state, "", newUrl);
@@ -237,12 +247,28 @@ const Map = forwardRef<MapHandle, MapProps>(
     if (mapRef.current) return;
 
     const params = new URLSearchParams(window.location.search);
-    const lat = parseUrlNumber(params.get("lat"), 41.38, -85, 85);
-    const lng = parseUrlNumber(params.get("lng"), 2.17, -180, 180);
-    const zoom = Math.round(parseUrlNumber(params.get("zoom"), 14, MIN_ZOOM, MAX_ZOOM));
+    const lat = parseUrlNumber(params.get("lat"), preloadedCity?.lat ?? 41.38, -85, 85);
+    const lng = parseUrlNumber(params.get("lng"), preloadedCity?.lng ?? 2.17, -180, 180);
+    const zoom = Math.round(parseUrlNumber(params.get("zoom"), preloadedCity?.zoom ?? 14, MIN_ZOOM, MAX_ZOOM));
 
     mapRef.current = L.map("map", { zoomControl: false, zoomSnap: 1 }).setView([lat, lng], zoom);
     mapRef.current.setMinZoom(MIN_ZOOM);
+
+    if (preloadedCity) {
+      const map = mapRef.current;
+      const [south, west, north, east] = preloadedCity.bbox;
+      const bounds = L.latLngBounds([south, west], [north, east]);
+      map.options.maxBoundsViscosity = 1;
+      map.setMaxBounds(bounds);
+
+      // The view must always fit inside the preloaded area, so the lowest zoom depends on the screen size
+      const applyMinZoom = () => {
+        map.setMinZoom(Math.max(MIN_ZOOM, map.getBoundsZoom(bounds, true)));
+        if (map.getZoom() < map.getMinZoom()) map.setZoom(map.getMinZoom());
+      };
+      applyMinZoom();
+      map.on("resize", applyMinZoom);
+    }
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap contributors",
@@ -474,7 +500,18 @@ const Map = forwardRef<MapHandle, MapProps>(
     container.style.cssText = "display:flex; flex-direction:column; gap:4px;";
 
     const idLine = document.createElement("span");
-    idLine.innerHTML = `<strong>ID:</strong> ${id}`;
+    idLine.innerHTML = `<strong>OSM ID:</strong> ${id}`;
+    idLine.title = "Click to copy";
+    idLine.style.cursor = "pointer";
+    idLine.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(String(id));
+        idLine.innerHTML = `<strong>OSM ID:</strong> ${id} <span style="color: var(--green); font-weight: bold;">Copied</span>`;
+        setTimeout(() => { idLine.innerHTML = `<strong>OSM ID:</strong> ${id}`; }, 1500);
+      } catch {
+        idLine.title = "Copying is not available here";
+      }
+    };
 
     const areaLine = document.createElement("span");
     areaLine.innerHTML = `<strong>Area:</strong> ${Math.round(area)} m²`;
@@ -528,7 +565,8 @@ const Map = forwardRef<MapHandle, MapProps>(
 
   // ─── Draw helpers ─────────────────────────────────────────────────────────────
 
-  function getExpandedBounds(factor = 0.5) {
+  // Everything outside the view is downloaded too, and a dense city costs several MB per 10 km square, so the margin is small
+  function getExpandedBounds(factor = 0.2) {
     const b = mapRef.current!.getBounds();
     const north = b.getNorth(), south = b.getSouth();
     const east = b.getEast(),  west  = b.getWest();
@@ -659,8 +697,9 @@ const Map = forwardRef<MapHandle, MapProps>(
     if (!mapRef.current) return;
     onLoadingRef.current?.(true);
     try {
-      const requested = getExpandedBounds();
-      await updateParkData([requested.north, requested.east, requested.south, requested.west]);
+      const requested = getExpandedBounds(initialFetchDoneRef.current ? FETCH_MARGIN : INITIAL_FETCH_MARGIN);
+      initialFetchDoneRef.current = true;
+      await updateParkData([requested.north, requested.east, requested.south, requested.west], preloadedCity?.id);
       if (!mapRef.current) return;
       // The map may have moved while loading, so paint for where it is now
       const bounds = getExpandedBounds();

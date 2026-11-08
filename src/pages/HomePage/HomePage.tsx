@@ -17,6 +17,7 @@ import { DEFAULT_HEATMAP_PARAMS } from "../../components/Map/Map";
 import type { HeatmapParams } from "../../components/Map/Map";
 import { useNavigate } from "react-router-dom";
 import { DEFAULT_SELECTED_TAGS } from "../../utils/tagGroups";
+import { PRELOADED_CITIES } from "../../utils/preloadedCities";
 
 const MIN_LOADING_SCREEN_MS = 1000;
 const LOADING_SCREEN_FADE_MS = 500;
@@ -54,7 +55,9 @@ const LayerButton = ({
   );
 };
 
-export default function HomePage() {
+export default function HomePage({ preloadedCityId }: { preloadedCityId?: string }) {
+  // On /preloaded/:cityId the map is limited to the area that ships with the app, so nothing is downloaded by accident
+  const preloadedCity = PRELOADED_CITIES.find((city) => city.id === preloadedCityId);
   const [isHeatmapLayerEnabled, setHeatmapLayer] = useState(true);
   const [isParkLayerEnabled, setParkLayer] = useState(true);
   const [isMenuOpen, toggleMenu] = useState(false);
@@ -62,7 +65,7 @@ export default function HomePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isMapReady, setIsMapReady] = useState(false);
   const [showLoadingScreen, setShowLoadingScreen] = useState(true);
-  const [cityName] = useState(() => new URLSearchParams(window.location.search).get("name"));
+  const [cityName] = useState(() => preloadedCity?.name ?? new URLSearchParams(window.location.search).get("name"));
   const mountedAtRef = useRef(performance.now());
 
   const [availableTags, setAvailableTags] = useState<string[]>([]);
@@ -72,6 +75,21 @@ export default function HomePage() {
   const mapRef = useRef<MapHandle>(null);
   const [mapRefreshKey, setMapRefreshKey] = useState(0);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (preloadedCityId && !preloadedCity) navigate("/", { replace: true });
+  }, [preloadedCityId, preloadedCity]);
+
+  // Opens the same view on the full map, which downloads whatever is missing around it
+  const handleLeavePreloaded = () => {
+    if (!preloadedCity) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("lat")) params.set("lat", String(preloadedCity.lat));
+    if (!params.has("lng")) params.set("lng", String(preloadedCity.lng));
+    if (!params.has("zoom")) params.set("zoom", String(preloadedCity.zoom));
+    params.set("name", preloadedCity.name);
+    navigate(`/map?${params.toString()}`);
+  };
 
   const handleDeletePark = async (park) => {
     await deletePark(park);
@@ -104,6 +122,8 @@ export default function HomePage() {
     loadDeletedParks().then(() => setDeletedParks(getDeletedParks()));
   }, []);
 
+  if (preloadedCityId && !preloadedCity) return null;
+
   return (
     <div style={styles.page}>
       {/* Loading overlay — shown on first data fetch */}
@@ -128,6 +148,7 @@ export default function HomePage() {
           heatmapParams={heatmapParams}
           onLoading={setIsLoading}
           onReady={handleMapReady}
+          preloadedCity={preloadedCity}
         />
       </Suspense>
 
@@ -187,6 +208,8 @@ export default function HomePage() {
           onTagsChanged={setSelectedTags}
           heatmapParams={heatmapParams}
           onHeatmapParamsChanged={setHeatmapParams}
+          preloadedCityName={preloadedCity?.name}
+          onLeavePreloaded={handleLeavePreloaded}
         />
       ) : (
         <div

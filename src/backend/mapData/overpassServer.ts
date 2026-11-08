@@ -11,7 +11,7 @@ export const OVERPASS_SERVERS: OverpassServer[] = [
     id: "dresel",
     name: "Dresel Systems",
     url: "https://ovp.dresel.systems/api/interpreter",
-    note: "Default. Queries are limited per IP address.",
+    note: "Hosted in Germany, queries are limited per IP address.",
   },
   {
     id: "private-coffee",
@@ -29,12 +29,22 @@ export const OVERPASS_SERVERS: OverpassServer[] = [
     id: "vk-maps",
     name: "VK Maps",
     url: "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
-    note: "Hosted in Russia, no request limits.",
+    note: "No request limits.",
   },
 ];
 
+export const AUTO_SERVER_ID = "auto";
+
 const STORAGE_KEY = "overpass_server";
-const DEFAULT_SERVER_URL = OVERPASS_SERVERS[0].url;
+
+// Rough bounding box of Europe, used to pick the server closest to the area being loaded
+const EUROPE = { south: 34, north: 72, west: -25, east: 45 };
+
+const SERVERS_BY_ID = Object.fromEntries(OVERPASS_SERVERS.map((s) => [s.id, s]));
+
+export function isInEurope(lat: number, lng: number) {
+  return lat >= EUROPE.south && lat <= EUROPE.north && lng >= EUROPE.west && lng <= EUROPE.east;
+}
 
 export function isValidOverpassUrl(value: string) {
   try {
@@ -45,15 +55,27 @@ export function isValidOverpassUrl(value: string) {
   }
 }
 
-export function getOverpassServerUrl(): string {
+// The saved choice is a server URL, or nothing when the server is picked automatically
+export function getSavedOverpassServerUrl(): string | null {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    return stored && isValidOverpassUrl(stored) ? stored : DEFAULT_SERVER_URL;
+    return stored && isValidOverpassUrl(stored) ? stored : null;
   } catch {
-    return DEFAULT_SERVER_URL;
+    return null;
   }
 }
 
-export function setOverpassServerUrl(url: string) {
-  localStorage.setItem(STORAGE_KEY, url);
+export function setOverpassServerUrl(url: string | null) {
+  if (url) localStorage.setItem(STORAGE_KEY, url);
+  else localStorage.removeItem(STORAGE_KEY);
+}
+
+// Servers to try for an area, best first. A server picked by the user is the only one used, otherwise the nearest
+// server comes first and the others serve as fallbacks when it is busy.
+export function getOverpassServerCandidates(lat: number, lng: number): string[] {
+  const saved = getSavedOverpassServerUrl();
+  if (saved) return [saved];
+
+  const preferred = isInEurope(lat, lng) ? ["dresel", "private-coffee", "main", "vk-maps"] : ["main", "private-coffee", "dresel", "vk-maps"];
+  return preferred.map((id) => SERVERS_BY_ID[id].url);
 }

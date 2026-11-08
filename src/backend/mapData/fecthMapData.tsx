@@ -1,62 +1,44 @@
-import { getOverpassServerUrl } from './overpassServer';
+import { getOverpassServerCandidates } from './overpassServer';
 import { readJsonWithProgress, type DownloadProgress } from './readJsonWithProgress';
+
+const LEISURE = '["leisure"~"^(park|recreation_ground|garden|playground|nature_reserve)$"]';
+const NATURAL = '["natural"~"^(wood|scrub|grassland)$"]';
+const LANDUSE = '["landuse"~"^(forest|allotments|recreation_ground|meadow|village_green|orchard|vineyard)$"]';
+
+// Servers are tried in turn, so a retry after a failure goes to the next one
+export function getServerUrl(south: number, west: number, north: number, east: number, attempt = 0) {
+  const candidates = getOverpassServerCandidates((south + north) / 2, (west + east) / 2);
+  return candidates[attempt % candidates.length];
+}
 
 export async function fetchMapData(
   south: number,
   west: number,
   north: number,
   east: number,
-  onProgress?: DownloadProgress
+  onProgress?: DownloadProgress,
+  attempt = 0
 ) {
-  // south = 41.388219-0.05;
-  // north = 41.388219+0.05;
-  // east = 2.188125+0.05;
-  // west = 2.188125-0.05;
+  const area = `(${south},${west},${north},${east})`;
+
+  // Ways only need their tags and outline, which leaves out the list of node ids, relations need their members
   const query = `
     [out:json][timeout:90];
     (
-      relation["leisure"="park"](${south},${west},${north},${east});
-      way["leisure"="park"](${south},${west},${north},${east});
-      relation["leisure"="recreation_ground"](${south},${west},${north},${east});
-      way["leisure"="recreation_ground"](${south},${west},${north},${east});
-      relation["leisure"="garden"](${south},${west},${north},${east});
-      way["leisure"="garden"](${south},${west},${north},${east});
-      relation["leisure"="playground"](${south},${west},${north},${east});
-      way["leisure"="playground"](${south},${west},${north},${east});
-      relation["leisure"="nature_reserve"](${south},${west},${north},${east});
-      way["leisure"="nature_reserve"](${south},${west},${north},${east});
-      nwr["leisure"="nature_reserve"](${south},${west},${north},${east});
-
-      // Natural green features
-      relation["natural"="wood"](${south},${west},${north},${east});
-      way["natural"="wood"](${south},${west},${north},${east});
-      relation["natural"="scrub"](${south},${west},${north},${east});
-      way["natural"="scrub"](${south},${west},${north},${east});
-      relation["natural"="grassland"](${south},${west},${north},${east});
-      way["natural"="grassland"](${south},${west},${north},${east});
-
-      // Landuse greenery
-      relation["landuse"="forest"](${south},${west},${north},${east});
-      way["landuse"="forest"](${south},${west},${north},${east});
-      relation["landuse"="grass"](${south},${west},${north},${east});
-      way["landuse"="grass"](${south},${west},${north},${east});
-      relation["landuse"="allotments"](${south},${west},${north},${east});
-      way["landuse"="allotments"](${south},${west},${north},${east});
-      relation["landuse"="recreation_ground"](${south},${west},${north},${east});
-      way["landuse"="recreation_ground"](${south},${west},${north},${east});
-      relation["landuse"="meadow"](${south},${west},${north},${east});
-      way["landuse"="meadow"](${south},${west},${north},${east});
-      relation["landuse"="village_green"](${south},${west},${north},${east});
-      way["landuse"="village_green"](${south},${west},${north},${east});
-      relation["landuse"="orchard"](${south},${west},${north},${east});
-      way["landuse"="orchard"](${south},${west},${north},${east});
-      relation["landuse"="vineyard"](${south},${west},${north},${east});
-      way["landuse"="vineyard"](${south},${west},${north},${east});
+      way${LEISURE}${area};
+      way${NATURAL}${area};
+      way${LANDUSE}${area};
+    );
+    out tags geom;
+    (
+      relation${LEISURE}${area};
+      relation${NATURAL}${area};
+      relation${LANDUSE}${area};
     );
     out geom;
   `;
 
-  const response = await fetch(getOverpassServerUrl(), {
+  const response = await fetch(getServerUrl(south, west, north, east, attempt), {
     method: 'POST',
     body: query,
   });
