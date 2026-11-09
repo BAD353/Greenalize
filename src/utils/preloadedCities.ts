@@ -36,6 +36,7 @@ const city = (
 });
 
 export const PRELOADED_CITIES: PreloadedCity[] = [
+  city("kyiv", "Kyiv", "Ukraine", 50.4501, 30.5234, [50.3, 30.3, 50.5, 30.7], 1.3),
   city("barcelona", "Barcelona", "Spain", 41.3874, 2.1686, [41.3, 1.9, 41.5, 2.3], 2.3),
   city("madrid", "Madrid", "Spain", 40.4168, -3.7038, [40.3, -3.9, 40.5, -3.5], 1.9),
   city("paris", "Paris", "France", 48.8566, 2.3522, [48.8, 2.1, 49.0, 2.5], 1.5),
